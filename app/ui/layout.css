@@ -1,0 +1,8 @@
+/* 操作欄とプレビューを独立してスクロールし、保存ボタンと画像情報を常時表示する。 */
+html,body{height:100%;overflow:hidden}
+.workspace{height:calc(100vh - 78px);min-height:0;overflow:hidden}
+.controls{overflow-y:auto;scrollbar-width:thin;scrollbar-color:#d0d9c7 transparent}
+.preview-panel{height:100%;min-height:0}
+.preview-stage{min-height:0;max-height:none}
+.preview-toolbar,.preview-footer,.status,.progress-track{flex-shrink:0}
+@media(max-height:800px){.preview-panel{min-height:0}.empty-state{min-height:520px}}

@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; base-uri 'none'">
+<title>PostClip — ポストを、きれいに残す。</title><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="layout.css"></head>
+<body>
+<svg class="svg-defs" xmlns="http://www.w3.org/2000/svg"><defs>
+<symbol id="i-clip" viewBox="0 0 24 24"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5M7 8h10M7 12h10M7 16h6"/></symbol>
+<symbol id="i-down" viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/></symbol>
+<symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V3H3v13h5"/></symbol>
+<symbol id="i-arrow" viewBox="0 0 24 24"><path d="M4 12h16m-6-6 6 6-6 6"/></symbol>
+<symbol id="i-link" viewBox="0 0 24 24"><path d="m10 13 4-4M8 16l-2 2a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m2 1 2-2a4 4 0 0 1 6 6l-5 5a4 4 0 0 1-6 0" transform="translate(1 0)"/></symbol>
+<symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m3 17 5-5 4 4 4-6 5 7"/><circle cx="8" cy="8" r="1"/></symbol>
+</defs></svg>
+<header class="topbar"><div class="brand"><span class="brand-icon"><svg><use href="#i-clip"/></svg></span><span>PostClip</span><span class="version" id="version">1.0.0</span></div><div class="top-right"><span class="local-dot"></span>画像はこのPCで作成<button id="help-button" class="icon-button" aria-label="使い方を開く">?</button></div></header>
+<main class="workspace">
+<section class="controls" aria-labelledby="title">
+<div class="intro"><span class="eyebrow">X POST → PNG</span><h1 id="title">ポストを、<br>きれいに残す。</h1><p>URLを貼って、スマホ幅の一枚に。<br>文字までくっきり、そのまま保存。</p></div>
+<form id="capture-form">
+<label class="field-title" for="url"><span class="number">01</span>投稿のURL</label>
+<div class="url-field"><textarea id="url" rows="2" spellcheck="false" maxlength="2048" placeholder="https://x.com/…/status/…" required aria-describedby="url-note"></textarea><button type="button" id="paste" class="small-button">貼り付け</button></div>
+<p class="field-note" id="url-note">x.com / twitter.com の投稿リンク</p>
+<div class="section-label"><span class="number">02</span>仕上がりを選ぶ</div>
+<div class="label-row"><label for="width">表示幅</label><span>スマホサイズ</span></div>
+<div class="width-row"><div class="segmented" id="width-presets" aria-label="表示幅プリセット"><button type="button" data-width="375">375</button><button type="button" class="selected" data-width="400">400</button><button type="button" data-width="430">430</button></div><div class="number-field"><input id="width" type="number" min="320" max="550" value="400" step="1" required aria-label="表示幅の数値"><span>px</span></div></div>
+<div class="label-row gap"><label for="scale">保存する解像度</label><span class="output-width" id="output-width">横 1,200px</span></div>
+<select id="scale"><option value="1">1倍 · 標準</option><option value="2">2倍 · くっきり</option><option value="3" selected>3倍 · 高精細 おすすめ</option></select>
+<label class="switch-row"><span>返信先の投稿も含める<small>表示できる直前の返信先を含めます</small></span><input type="checkbox" id="conversation" checked><span class="switch" aria-hidden="true"></span></label>
+<details id="advanced"><summary>表示方法・余白を調整<span>＋</span></summary><div class="advanced-content">
+<label for="mode">表示方法</label><select id="mode"><option value="embed">かんたん — 公式埋め込み</option><option value="page">投稿画面 — Xの表示を撮影</option></select><p id="mode-note" class="field-note">公開投稿向け。ログイン不要で利用できます。</p>
+<div class="two-fields"><div><label for="theme">テーマ</label><select id="theme"><option value="light">ライト</option><option value="dark">ダーク</option></select></div><div><label for="padding">外側の余白</label><select id="padding"><option value="0">なし</option><option value="16">16px</option><option value="24">24px</option></select></div></div>
+<button type="button" id="open-x" class="text-button">Xを開く・ログイン <span>↗</span></button>
+</div></details>
+<button type="submit" class="capture-button" id="capture-button"><svg><use href="#i-clip"/></svg><span>画像を作成</span><svg class="arrow"><use href="#i-arrow"/></svg></button>
+<button type="button" id="cancel" class="cancel-button" hidden>作成をキャンセル</button>
+<p class="shortcut">Ctrl + Enter でも作成できます</p>
+</form>
+<div class="control-footer"><span>PNG形式</span><i></i><span>縦は投稿の下端まで</span></div>
+</section>
+<section class="preview-panel" aria-label="画像プレビュー">
+<div class="preview-toolbar"><div><span class="eyebrow">PREVIEW</span><div class="preview-heading" id="preview-heading">仕上がりプレビュー</div></div><div class="actions"><button id="copy" class="secondary-button" disabled title="画像をクリップボードにコピー"><svg><use href="#i-copy"/></svg><span>コピー</span></button><button id="download" class="download-button" disabled><svg><use href="#i-down"/></svg>PNGを保存</button></div></div>
+<div id="status" class="status" role="status" aria-live="polite" hidden></div>
+<div class="progress-track" id="progress-track" hidden><div id="progress-bar"></div></div>
+<div class="preview-stage" id="stage">
+<div id="empty-state" class="empty-state"><div class="empty-art"><div class="ghost-line"></div><div class="sample-card"><div class="sample-top"><span class="sample-avatar"><svg><use href="#i-clip"/></svg></span><div><b>PostClip サンプル</b><span>@postclip_sample</span></div><span class="sample-mark">✦</span></div><p class="sample-text">残しておきたい言葉を、<br>読みやすい一枚に。</p><div class="sample-media"><span class="media-ring"></span><span class="media-dot"></span><span class="media-caption">Save a little moment.</span></div><div class="sample-bottom"><span>スマホ幅</span><span>高精細PNG ↗</span></div></div><span class="measure-tag">400px × 高さは自動</span></div><h2>ここに完成画像が表示されます</h2><p>左に投稿のURLを貼り付けて、<br>「画像を作成」を押してください。</p><span class="sample-disclaimer">上のカードは操作案内用の架空サンプルです</span></div>
+<figure id="result" hidden><img id="result-image" alt="作成した投稿のスクリーンショット"><figcaption id="result-caption"></figcaption></figure>
+<div class="busy-overlay" id="busy-overlay" hidden><span class="spinner"></span><strong id="busy-message">投稿を読み込んでいます…</strong><span>長い投稿も、下端まで一枚に。</span></div>
+</div>
+<footer class="preview-footer"><span id="image-meta">表示幅と画質を選んでスタート</span><div><label class="zoom-control" id="zoom-control" hidden><input type="checkbox" id="actual-size">実寸で見る</label><button class="text-button" id="source" hidden>元の投稿を開く ↗</button></div></footer>
+</section>
+</main>
+<dialog id="help-dialog"><div class="dialog-heading"><h2>PostClipの使い方</h2><button id="help-close" aria-label="閉じる" class="icon-button">×</button></div><ol><li>Xの投稿URLを貼り付けます。</li><li>表示幅と解像度を選び、「画像を作成」。</li><li>プレビューを確認して「PNGを保存」。</li></ol><p>標準は400px幅・3倍解像度。横1,200pxの画像を、文字から直接描画します。縦の長さは表示された投稿に合わせます。</p><h3>長文やログインが必要な投稿</h3><p>「表示方法・余白を調整」から「投稿画面」を選びます。必要な場合は「Xを開く」でログインしてから作成してください。本文や引用がX側で省略されている場合、表示された範囲が保存されます。返信一覧全体は含みません。</p><h3>画像とログイン情報</h3><p>投稿の取得にはインターネット接続が必要です。画像はPC内で作成します。PostClip独自のサーバーへの送信、解析、広告はありません。Xへの通信は発生します。ログインは普段のブラウザーと別に、このアプリ内に保存されます。</p><button id="clear-login" class="secondary-button">アプリ内のXログイン情報を削除</button><p class="field-note">動画は静止画として保存されます。Xの仕様変更、非公開設定、年齢・地域制限などにより取得できない場合があります。投稿の利用は権利者の権利とXの利用条件をご確認ください。</p><div class="dialog-footer">PostClip <span id="help-version">1.0.0</span> · X非公式ツール</div></dialog>
+<script src="ui.js"></script></body></html>
