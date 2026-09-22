@@ -103,13 +103,14 @@ def main():
         raise RuntimeError("製品バージョンをmajor.minor.patch形式で指定してください。")
     runtime = ROOT / "dist/PostClip-win32-x64"
     check_build(runtime, version)
-    cover_header = (ROOT / "booth/booth-cover.png").read_bytes()[:24]
-    if cover_header[:8] != b"\x89PNG\r\n\x1a\n":
-        raise RuntimeError("先頭サムネイルはPNGで保存してください。")
-    cover_width, cover_height = struct.unpack(">II", cover_header[16:24])
-    if cover_width != cover_height:
-        raise RuntimeError("先頭サムネイルは正方形にしてください。")
-    print(f"Square thumbnail verified: {cover_width} x {cover_height}")
+    for image_name in ["booth-cover.png", "booth-guide.png", "postclip-screen.png"]:
+        image_header = (ROOT / "booth" / image_name).read_bytes()[:24]
+        if image_header[:8] != b"\x89PNG\r\n\x1a\n":
+            raise RuntimeError(f"掲載画像はPNGで保存してください: {image_name}")
+        width, height = struct.unpack(">II", image_header[16:24])
+        if width != height:
+            raise RuntimeError(f"掲載画像は正方形にしてください: {image_name}")
+        print(f"Square image verified: {image_name}, {width} x {height}")
     suffix = f".rev{args.revision}" if args.revision is not None else ""
     seller_name = f"postclip-seller-kit-v{version}{suffix}.zip"
 
@@ -156,7 +157,7 @@ SHA256.txt : 同梱ファイルの照合用ハッシュ
 3. 商品名・説明・画像を設定し、価格を0円にします。
 
 seller-kit全体は制作者向けです。
-商品が登録済みの場合は、先頭画像と配布ZIPを差し替えてください。
+商品が登録済みの場合は、掲載画像や配布ZIPのうち更新対象を差し替えてください。
 Windows実機での起動は未検証です。詳しくは検証メモをご覧ください。
 
 【ファイル名の規則】
@@ -172,6 +173,10 @@ Windows実機での起動は未検証です。詳しくは検証メモをご覧�
 掲載素材/booth-cover.png は正方形です。
 商品一覧での見やすさを優先し、キャッチコピー・短い説明・無料表示に絞っています。
 細かな仕様と操作手順は、2枚目以降の画像と商品説明に掲載します。
+
+【掲載画像のサイズ】
+booth-cover.png、booth-guide.png、postclip-screen.pngは、いずれも1:1の正方形です。
+postclip-screen.pngは、架空投稿を読み込んだ実際のアプリ画面を撮影した画像です。
 """, encoding="utf-8")
         contents = {
             "README.txt": readme,

@@ -1,0 +1,30 @@
+PostClip — 正方形の操作説明画像
+
+完成画像: booth-guide.png
+形式: 1:1の正方形PNG
+制作方法: 内蔵の画像生成機能で既存の操作説明画像を再構成
+参考: 既存の操作説明画像と承認済みの正方形カバー
+画面紹介のpostclip-screen.pngは実際のアプリから撮影する。
+
+生成時のプロンプト:
+Edit the FIRST reference image, the PostClip how-to guide, into a true SQUARE 1:1 BOOTH listing image (1254 x 1254 if possible). The SECOND reference is the already approved square cover: use its ivory, dark forest green and lime visual identity, but this is a distinct how-to image, not another cover. Reflow the content into a square composition; never squeeze, stretch, crop off text, or simply pad the old wide layout. Keep generous safe margins and crisp, accurate Japanese typography.
+
+Required content, clear hierarchy:
+Brand "PostClip" with the small capture-bracket icon at top.
+Large heading "貼って、選んで、保存。"
+Short subtitle "切り抜きの手間を、3ステップに。"
+Three clearly numbered step panels, using these exact texts:
+"01"  "投稿のURLを貼る"
+"x.com / twitter.com のリンクに対応。"
+"02"  "幅と画質を選ぶ"
+"標準は400px幅・3倍解像度。"
+"03"  "プレビューを確認してPNG保存"
+"画像コピーや実寸表示も使えます。"
+
+A secondary neat portrait post-card example on the right, inspired by the fictional green PostClip sample in the original guide, with a green circular avatar, simple X mark and a green graphic. Preserve the visual idea of a tidy captured post. The example can be simpler and smaller to make room for the instructional text; do not invent extra UI controls or actual user names.
+A lime callout near the example with exact text: "横1,200pxのPNG"
+Under it, "文字から高解像度で描画".
+Small but readable bottom note: "X側の表示・閲覧制限により、取得範囲は異なります。"
+Small example label: "架空サンプル"
+
+Arrange the headline across the top, three steps stacked in a comfortable left column, and the example card in a narrower right column below the headline. Lower notes can span the bottom. Balanced square layout, all elements fully visible. No prices or free badge on this guide; the cover already shows that. No extra slogans or decorative English labels. Do not include a desktop screenshot, browser chrome, watermark or outside border. Final canvas must be square.

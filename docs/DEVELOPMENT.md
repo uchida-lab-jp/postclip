@@ -29,10 +29,10 @@ Electron 44ではバイナリー導入を`npx install-electron`で明示的に�
 Windowsビルド後に、Python 3の標準ライブラリーで公開用セットを作成します。Pythonが必要なのはこの開発用の梱包処理だけで、利用者には不要です。
 
 ```sh
-python scripts/package-release.py --revision 2
+python scripts/package-release.py --revision 3
 ```
 
-今回の完成品は`dist/postclip-seller-kit-v1.0.0.rev2.zip`です。アプリのバージョンは`package.json`から取得し、`1.0.0`のままです。`--revision 2`はseller-kitの出力名だけを変えます。通常の新しい製品版ではこの引数を省略し、`postclip-seller-kit-v実バージョン.zip`として出力します。
+今回の完成品は`dist/postclip-seller-kit-v1.0.0.rev3.zip`です。アプリのバージョンは`package.json`から取得し、`1.0.0`のままです。`--revision 3`はseller-kitの出力名だけを変えます。通常の新しい製品版ではこの引数を省略し、`postclip-seller-kit-v実バージョン.zip`として出力します。
 
 本体・説明書・BOOTH掲載素材・ソースをすべて含め、seller-kitのZIPを1本だけ渡します。体験版はありません。
 
@@ -43,13 +43,15 @@ ZIP内は`PostClip-seller-kit/`を起点に、`配布用/postclip-v1.0.0.zip`、
 - 掲載素材などの内部ファイル名に版番号は付けません。
 - 同一アプリ版の再出力で区別が必要な場合だけ、指定された`.rev2`などをseller-kit名に付けます。
 
-梱包処理は、ビルド済みアプリと開発ソースの一致、バージョン、先頭画像が正方形であること、内部ファイル名、ZIPの整合性を確認します。アプリの変更時にはテストとWindowsビルドを先に実施してください。
+梱包処理は、ビルド済みアプリと開発ソースの一致、バージョン、掲載画像3枚がすべて正方形であること、内部ファイル名、ZIPの整合性を確認します。アプリの変更時にはテストとWindowsビルドを先に実施してください。
 
 ## 掲載画像
 
 `booth/booth-cover.png`は、商品一覧のサムネイルに使う正方形の完成画像です。大きなキャッチコピー、URLを貼るだけという短い説明、無料表示に絞ります。細かな仕様や注意事項は2枚目以降と商品説明に掲載します。
 
-`booth/cover.html`でサムネイルを確認できます。制作条件は`booth/thumbnail-prompt.txt`に記載しています。`scripts/render-assets.cjs`は操作説明画像だけを書き出し、先頭サムネイルを上書きしません。
+`booth/cover.html`でサムネイル、`booth/guide.html`で操作説明画像を確認できます。制作条件は`booth/thumbnail-prompt.txt`と`booth/guide-prompt.txt`に記載しています。どちらも完成PNGを保持します。
+
+画面紹介画像は`electron scripts/render-assets.cjs`で作成します。独立した設定領域で実際のアプリを起動し、通信を架空投稿に置き換え、1254×1254pxの正方形で撮影します。利用者の設定には触れず、先頭画像と操作説明画像を上書きしません。
 
 ## 主なファイル
 
