@@ -2,9 +2,9 @@
 const {app,BrowserWindow}=require('electron');
 const fs=require('node:fs/promises');const path=require('node:path');
 app.on('window-all-closed',()=>{});
-// ローカルの掲載素材だけをブラウザーで描画し、PNGとして書き出す。
+// 操作説明画像を描画する。先頭の正方形サムネイルは完成PNGをそのまま使う。
 async function run(){
- for(const [source,target,width,height]of [['cover.html','booth-cover.png',1600,1200],['guide.html','booth-guide.png',1600,1000]]){
+ for(const [source,target,width,height]of [['guide.html','booth-guide.png',1600,1000]]){
   const w=new BrowserWindow({show:false,width,height,useContentSize:true,webPreferences:{sandbox:true,offscreen:true,nodeIntegration:false,contextIsolation:true}});
   await w.loadFile(path.resolve(__dirname,'../booth',source));
   await w.webContents.executeJavaScript('document.fonts.ready');

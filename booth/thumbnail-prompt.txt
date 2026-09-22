@@ -1,0 +1,21 @@
+PostClip — 先頭サムネイル制作条件
+
+完成画像: booth-cover.png
+用途: BOOTHの商品一覧にも表示する1枚目の画像
+形式: 正方形PNG
+制作方法: 内蔵の画像生成機能で既存のカバー画像を再構成
+方針: 縮小表示でも読めること。大きなコピー、短い用途説明、無料表示に絞る。
+詳細仕様、操作手順、注意事項は2枚目以降と商品説明へ記載する。
+
+生成時のプロンプト:
+Edit target: the attached existing PostClip promotional cover. Replace its landscape composition with a completely redesigned SQUARE 1:1 BOOTH storefront thumbnail, ideally 1536x1536. This is the first listing image, seen at only 300px square: extremely clear, catchy, minimal, readable at thumbnail size. Preserve the product name PostClip and the reference's warm ivory / dark forest green / fresh lime palette, and keep a recognizable small capture-bracket product icon beside the brand. Do not preserve the cluttered layout or desktop window screenshot.
+
+Typography-first Japanese graphic design, polished minimalist software advertising. Warm ivory background, bold very dark green sans-serif Japanese headline occupying the upper half, generous margins and confident balanced composition. All content safely inside an 8 percent margin. Exact visible marketing text ONLY:
+small brand: "PostClip"
+huge main headline in two lines: "Xの投稿を、" and "きれいに保存。"
+one short subline: "URLを貼るだけ。"
+one prominent lime badge: "無料"
+
+In the lower half, add one elegant illustration of a clean portrait white social-post card with a black X mark, a small green circular avatar, a few simple gray placeholder lines, and a minimal green image block, framed by lime screenshot crop corners. This should instantly suggest turning an X post into a tidy image, not a desktop application screenshot or a phone device. A little natural soft shadow and subtle perspective are fine, but keep the card simple with NO extra words, no fake usernames, no dates or counters, no dense UI. The illustrated card is secondary to the headline. Badge at lower left, card at lower right with enough breathing room.
+
+No other text. No feature lists, no pixel counts, no resolution multiplier, no Windows version, no footnotes, no disclaimer, no URL, no watermarks, no decorative English slogans. All Japanese letters must be correct and sharp. The final image MUST be square, not a landscape image padded into a square. Redesign the full canvas so it stands alone as the BOOTH first thumbnail.

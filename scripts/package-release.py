@@ -12,7 +12,7 @@ from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
 
 ROOT = Path(__file__).resolve().parent.parent
-REVISION = re.compile(r"-v\d+(?:\.\d+)*", re.IGNORECASE)
+VERSION_SUFFIX = re.compile(r"(?:-v\d+(?:\.\d+)*|\.rev\d+)", re.IGNORECASE)
 
 
 # ファイルを分割して読み込み、配布物の照合用ハッシュを計算する。
@@ -69,12 +69,14 @@ console.log('Bundled app matches source: ' + input.version + ' (' + input.source
     )
 
 
-# 内部ファイル名を検査し、入れ子のZIPは再圧縮せずにまとめる。
-def write_zip(target, entries):
+# 内部は固定名とし、明示した配布ZIPだけに実バージョンを許可する。
+def write_zip(target, entries, allowed_versioned=()):
     with ZipFile(target, "w", compression=ZIP_DEFLATED, compresslevel=6) as archive:
         for name, path in sorted(entries.items()):
             parts = PurePosixPath(name)
-            if parts.is_absolute() or ".." in parts.parts or REVISION.search(name):
+            if parts.is_absolute() or ".." in parts.parts:
+                raise RuntimeError(f"内部パスが不正です: {name}")
+            if VERSION_SUFFIX.search(name) and name not in allowed_versioned:
                 raise RuntimeError(f"内部ファイル名が規約に合いません: {name}")
             archive.write(path, name, compress_type=ZIP_STORED if path.suffix == ".zip" else ZIP_DEFLATED)
     with ZipFile(target) as archive:
@@ -86,19 +88,32 @@ def write_zip(target, entries):
     print(f"Verified {target.name}: {len(entries)} files, {target.stat().st_size:,} bytes")
 
 
-# 本体ZIP、ソースZIP、BOOTH掲載素材を固定名でseller-kitへ収める。
+# 製品ZIPに実バージョンを付け、ソースと掲載素材をseller-kitへ収める。
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=ROOT / "dist")
-    output = parser.parse_args().output_dir.resolve()
+    parser.add_argument("--revision", type=int, help="同じ製品版の再出力時にseller-kitへ付ける番号")
+    args = parser.parse_args()
+    if args.revision is not None and args.revision < 2:
+        parser.error("--revisionは2以上を指定してください。")
+    output = args.output_dir.resolve()
     output.mkdir(parents=True, exist_ok=True)
     version = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
     if not re.fullmatch(r"\d+\.\d+\.\d+", version):
         raise RuntimeError("製品バージョンをmajor.minor.patch形式で指定してください。")
     runtime = ROOT / "dist/PostClip-win32-x64"
     check_build(runtime, version)
+    cover_header = (ROOT / "booth/booth-cover.png").read_bytes()[:24]
+    if cover_header[:8] != b"\x89PNG\r\n\x1a\n":
+        raise RuntimeError("先頭サムネイルはPNGで保存してください。")
+    cover_width, cover_height = struct.unpack(">II", cover_header[16:24])
+    if cover_width != cover_height:
+        raise RuntimeError("先頭サムネイルは正方形にしてください。")
+    print(f"Square thumbnail verified: {cover_width} x {cover_height}")
+    suffix = f".rev{args.revision}" if args.revision is not None else ""
+    seller_name = f"postclip-seller-kit-v{version}{suffix}.zip"
 
-    windows = output / "postclip-windows.zip"
+    windows = output / f"postclip-v{version}.zip"
     runtime_entries = {
         "PostClip/" + path.relative_to(runtime).as_posix(): path
         for path in runtime.rglob("*") if path.is_file()
@@ -110,7 +125,7 @@ def main():
     })
     write_zip(windows, runtime_entries)
 
-    source = output / "postclip-source.zip"
+    source = output / "postclip.zip"
     source_files = [ROOT / name for name in [
         "package.json", "package-lock.json", "README.md", "LICENSE-PostClip.txt", ".gitignore",
     ]]
@@ -118,7 +133,7 @@ def main():
         source_files.extend(path for path in (ROOT / folder).rglob("*")
                             if path.is_file() and "__pycache__" not in path.parts
                             and path.name != "SHA256.txt")
-    write_zip(source, {"postclip-source/" + path.relative_to(ROOT).as_posix(): path
+    write_zip(source, {"postclip/" + path.relative_to(ROOT).as_posix(): path
                        for path in source_files})
 
     with tempfile.TemporaryDirectory(prefix="postclip-package-") as staging:
@@ -129,31 +144,39 @@ def main():
 価格は0円、体験版はありません。
 
 【同梱物】
-配布用/postclip-windows.zip : BOOTHへ登録するWindows x64用アプリ
-ソース/postclip-source.zip : 開発ソース・テスト・ビルド手順・画像テンプレート
+配布用/{windows.name} : BOOTHへ登録するWindows x64用アプリ
+ソース/postclip.zip : postclip/ の中に開発ソース・テスト・ビルド手順・掲載素材
 掲載素材/ : 商品名、商品説明、タグ候補、公開手順、紹介画像
 検証メモ.txt : 実施済みの確認と未確認の範囲
 SHA256.txt : 同梱ファイルの照合用ハッシュ
 
 【公開するには】
 1. 「掲載素材/公開手順.txt」を開きます。
-2. BOOTHには「配布用/postclip-windows.zip」を登録します。
+2. BOOTHには「配布用/{windows.name}」を登録します。
 3. 商品名・説明・画像を設定し、価格を0円にします。
 
 seller-kit全体は制作者向けです。
-実際のBOOTHへの出品操作はまだ行っていません。
+商品が登録済みの場合は、先頭画像と配布ZIPを差し替えてください。
 Windows実機での起動は未検証です。詳しくは検証メモをご覧ください。
 
 【ファイル名の規則】
-外側のZIPは postclip-seller-kit-v{version}.zip です。
--vの後ろはアプリの実バージョンです。リビジョン管理はしません。
-ZIP内のファイル名・フォルダー名は番号の付かない固定名です。
+外側のZIPは {seller_name} です。
+配布する製品ZIPは {windows.name} です。-vの後ろは実バージョンです。
+ソースZIPは postclip.zip、展開時の最上位フォルダーは postclip/ です。
+アプリ内部・掲載素材・ソース内部のファイル名は番号なしの固定名です。
+同じアプリ版の再出力では、指定された場合だけseller-kitの末尾に.rev番号を付けます。
+アプリのバージョンは {version} のままです。
 本体・公開素材・ソースはこのZIP一本にまとめて渡します。
+
+【先頭サムネイル】
+掲載素材/booth-cover.png は正方形です。
+商品一覧での見やすさを優先し、キャッチコピー・短い説明・無料表示に絞っています。
+細かな仕様と操作手順は、2枚目以降の画像と商品説明に掲載します。
 """, encoding="utf-8")
         contents = {
             "README.txt": readme,
-            "配布用/postclip-windows.zip": windows,
-            "ソース/postclip-source.zip": source,
+            "配布用/" + windows.name: windows,
+            "ソース/postclip.zip": source,
             "検証メモ.txt": ROOT / "booth/検証メモ.txt",
         }
         for name in ["商品名.txt", "商品説明.txt", "タグ候補.txt", "公開手順.txt",
@@ -163,8 +186,9 @@ ZIP内のファイル名・フォルダー名は番号の付かない固定名�
         manifest.write_text("".join(f"{sha256(path)}  {name}\n" for name, path in sorted(contents.items())),
                             encoding="utf-8")
         contents["SHA256.txt"] = manifest
-        seller = output / f"postclip-seller-kit-v{version}.zip"
-        write_zip(seller, {"PostClip-seller-kit/" + name: path for name, path in contents.items()})
+        seller = output / seller_name
+        write_zip(seller, {"PostClip-seller-kit/" + name: path for name, path in contents.items()},
+                  allowed_versioned={"PostClip-seller-kit/配布用/" + windows.name})
         print(f"Deliver only: {seller}")
 
 
