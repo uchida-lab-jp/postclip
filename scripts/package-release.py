@@ -35,7 +35,7 @@ def check_build(runtime, version):
         stream.seek(offset)
         if stream.read(6) != b"PE\x00\x00\x64\x86":
             raise RuntimeError("PostClip.exeがWindows x64向けではありません。")
-    sources = ["README.md"] + [
+    sources = ["README.md", "LICENSE"] + [
         str(path.relative_to(ROOT)).replace("\\", "/")
         for path in sorted((ROOT / "app").rglob("*")) if path.is_file()
     ]
@@ -58,6 +58,7 @@ for (const file of input.sources) {
 }
 for (const file of listPackage(input.archive)) {
   if (/^\/(qa|tests|scripts|booth|docs|dist)(\/|$)/.test(file)) throw new Error('Unexpected development file: ' + file);
+  if (file === '/LICENSE-PostClip.txt') throw new Error('Use LICENSE for the source license inside app.asar');
 }
 console.log('Bundled app matches source: ' + input.version + ' (' + input.sources.length + ' files)');
 """
@@ -69,7 +70,7 @@ console.log('Bundled app matches source: ' + input.version + ' (' + input.source
     )
 
 
-# 内部は固定名とし、明示した配布ZIPだけに実バージョンを許可する。
+# 内部は固定名とし、明示した配布用・ソースZIPだけに実バージョンを許可する。
 def write_zip(target, entries, allowed_versioned=()):
     with ZipFile(target, "w", compression=ZIP_DEFLATED, compresslevel=6) as archive:
         for name, path in sorted(entries.items()):
@@ -88,7 +89,7 @@ def write_zip(target, entries, allowed_versioned=()):
     print(f"Verified {target.name}: {len(entries)} files, {target.stat().st_size:,} bytes")
 
 
-# 製品ZIPに実バージョンを付け、ソースと掲載素材をseller-kitへ収める。
+# 配布用・ソースZIPに用途と実バージョンを付け、掲載素材と一式にまとめる。
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, default=ROOT / "dist")
@@ -103,6 +104,10 @@ def main():
         raise RuntimeError("製品バージョンをmajor.minor.patch形式で指定してください。")
     runtime = ROOT / "dist/PostClip-win32-x64"
     check_build(runtime, version)
+    if not (runtime / "LICENSE").is_file() or not (runtime / "LICENSES.chromium.html").is_file():
+        raise RuntimeError("Electron / Chromiumのライセンス表記がありません。")
+    if (runtime / "LICENSE").read_bytes() == (ROOT / "LICENSE").read_bytes():
+        raise RuntimeError("配布版のElectron LICENSEをPostClipのLICENSEで置き換えないでください。")
     for image_name in ["booth-cover.png", "booth-guide.png", "postclip-screen.png"]:
         image_header = (ROOT / "booth" / image_name).read_bytes()[:24]
         if image_header[:8] != b"\x89PNG\r\n\x1a\n":
@@ -114,7 +119,7 @@ def main():
     suffix = f".rev{args.revision}" if args.revision is not None else ""
     seller_name = f"postclip-seller-kit-v{version}{suffix}.zip"
 
-    windows = output / f"postclip-v{version}.zip"
+    windows = output / f"postclip-win-x64-v{version}.zip"
     runtime_entries = {
         "PostClip/" + path.relative_to(runtime).as_posix(): path
         for path in runtime.rglob("*") if path.is_file()
@@ -122,13 +127,13 @@ def main():
     runtime_entries.update({
         "PostClip/はじめに.txt": ROOT / "docs/はじめに.txt",
         "PostClip/README.md": ROOT / "README.md",
-        "PostClip/LICENSE-PostClip.txt": ROOT / "LICENSE-PostClip.txt",
+        "PostClip/LICENSE-PostClip.txt": ROOT / "LICENSE",
     })
     write_zip(windows, runtime_entries)
 
-    source = output / "postclip.zip"
+    source = output / f"postclip-source-v{version}.zip"
     source_files = [ROOT / name for name in [
-        "package.json", "package-lock.json", "README.md", "LICENSE-PostClip.txt", ".gitignore",
+        "package.json", "package-lock.json", "README.md", "LICENSE", ".gitignore",
     ]]
     for folder in ["app", "tests", "scripts", "docs", "booth"]:
         source_files.extend(path for path in (ROOT / folder).rglob("*")
@@ -146,7 +151,7 @@ def main():
 
 【同梱物】
 配布用/{windows.name} : BOOTHへ登録するWindows x64用アプリ
-ソース/postclip.zip : postclip/ の中に開発ソース・テスト・ビルド手順・掲載素材
+ソース/{source.name} : postclip/ の中に開発ソース・テスト・ビルド手順・掲載素材
 掲載素材/ : 商品名、商品説明、タグ候補、公開手順、紹介画像
 検証メモ.txt : 実施済みの確認と未確認の範囲
 SHA256.txt : 同梱ファイルの照合用ハッシュ
@@ -162,12 +167,19 @@ Windows実機での起動は未検証です。詳しくは検証メモをご覧�
 
 【ファイル名の規則】
 外側のZIPは {seller_name} です。
-配布する製品ZIPは {windows.name} です。-vの後ろは実バージョンです。
-ソースZIPは postclip.zip、展開時の最上位フォルダーは postclip/ です。
+配布する製品ZIPは {windows.name} です。win-x64はWindows x64向け、-vの後ろは実バージョンです。
+配布ZIPの最上位フォルダーは PostClip/ です。
+ソースZIPは {source.name}、展開時の最上位フォルダーは postclip/ です。
 アプリ内部・掲載素材・ソース内部のファイル名は番号なしの固定名です。
 同じアプリ版の再出力では、指定された場合だけseller-kitの末尾に.rev番号を付けます。
 アプリの実バージョンは {version} です。
 本体・公開素材・ソースはこのZIP一本にまとめて渡します。
+
+【ライセンスファイル】
+ソースの postclip/LICENSE : PostClip自作部分のMIT License
+配布版の PostClip/LICENSE-PostClip.txt : 同じPostClipのMIT License
+配布版の PostClip/LICENSE と LICENSES.chromium.html : Electron / Chromiumの表記
+配布版にあるElectronのLICENSEを、PostClipのLICENSEで上書きしないでください。
 
 【先頭サムネイル】
 掲載素材/booth-cover.png は正方形です。
@@ -181,7 +193,7 @@ postclip-screen.pngは、架空投稿を読み込んだ実際のアプリ画面�
         contents = {
             "README.txt": readme,
             "配布用/" + windows.name: windows,
-            "ソース/postclip.zip": source,
+            "ソース/" + source.name: source,
             "検証メモ.txt": ROOT / "booth/検証メモ.txt",
         }
         for name in ["商品名.txt", "商品説明.txt", "タグ候補.txt", "公開手順.txt",
@@ -193,7 +205,8 @@ postclip-screen.pngは、架空投稿を読み込んだ実際のアプリ画面�
         contents["SHA256.txt"] = manifest
         seller = output / seller_name
         write_zip(seller, {"PostClip-seller-kit/" + name: path for name, path in contents.items()},
-                  allowed_versioned={"PostClip-seller-kit/配布用/" + windows.name})
+                  allowed_versioned={"PostClip-seller-kit/配布用/" + windows.name,
+                                     "PostClip-seller-kit/ソース/" + source.name})
         print(f"Deliver only: {seller}")
 
 

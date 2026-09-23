@@ -30,21 +30,40 @@ Electron 44ではバイナリー導入を`npx install-electron`で明示的に�
 Windowsビルド後に、Python 3の標準ライブラリーで公開用セットを作成します。Pythonが必要なのはこの開発用の梱包処理だけで、利用者には不要です。
 
 ```sh
-python scripts/package-release.py
+python scripts/package-release.py --revision 2
 ```
 
-今回の完成品は`dist/postclip-seller-kit-v1.1.0.zip`です。アプリのバージョンは`package.json`から取得します。機能追加のため1.1.0へ更新しました。素材だけの再出力で明示された場合は`--revision N`でseller-kit名だけを区別できます。
+今回の完成品は`dist/postclip-seller-kit-v1.1.0.rev2.zip`です。ファイル名とライセンス配置を統一した再出力のため、アプリの実バージョンは1.1.0を維持します。バージョンは`package.json`から取得します。通常の製品版は`--revision`を省略し、`postclip-seller-kit-v実バージョン.zip`として出力します。同じアプリ版を再出力するときは、必要に応じて`--revision N`でseller-kit名だけを区別します。
 
 本体・説明書・BOOTH掲載素材・ソースをすべて含め、seller-kitのZIPを1本だけ渡します。体験版はありません。
 
-ZIP内は`PostClip-seller-kit/`を起点に、`配布用/postclip-v1.1.0.zip`、`ソース/postclip.zip`、`掲載素材/`、`README.txt`、`検証メモ.txt`、`SHA256.txt`を収めます。
+ZIP内は`PostClip-seller-kit/`を起点に、`配布用/postclip-win-x64-v1.1.0.zip`、`ソース/postclip-source-v1.1.0.zip`、`掲載素材/`、`README.txt`、`検証メモ.txt`、`SHA256.txt`を収めます。
 
-- 配布する製品ZIPには実バージョンを付けます。製品ZIPの中のファイル名・フォルダー名は固定名です。
-- ソースZIPは`postclip.zip`、その最上位フォルダーは`postclip/`に固定します。Gitリポジトリーへそのまま配置できる構成です。
+- 配布する製品ZIPには対象OS・CPUと実バージョンを付けます。製品ZIP内のルートは`PostClip/`、中のファイル名・フォルダー名は固定名です。
+- ソースZIPは`postclip-source-v実バージョン.zip`、その最上位フォルダーは`postclip/`に固定します。Gitリポジトリーへそのまま配置できる構成です。
 - 掲載素材などの内部ファイル名に版番号は付けません。
 - 同一アプリ版の再出力で区別が必要な場合だけ、指定された`.rev2`などをseller-kit名に付けます。
 
 梱包処理は、ビルド済みアプリと開発ソースの一致、バージョン、掲載画像3枚がすべて正方形であること、内部ファイル名、ZIPの整合性を確認します。アプリの変更時にはテストとWindowsビルドを先に実施してください。
+
+## BOOTHアプリの共通命名規則
+
+| 用途 | 標準ファイル名 |
+| --- | --- |
+| Windows x64のZIP配布 | `app-win-x64-vX.Y.Z.zip` |
+| ソース | `app-source-vX.Y.Z.zip` |
+| 制作者向け全部入り | `app-seller-kit-vX.Y.Z.zip` |
+| 将来のWindows x64インストーラー | `app-win-x64-setup-vX.Y.Z.exe` |
+
+`app`を各アプリの識別名、`X.Y.Z`を実バージョンに置き換えます。PostClipのソースZIP内のルートは`postclip/`、配布ZIP内のルートは`PostClip/`です。同じチャットで修正品を再出力するときは、同名ファイルの取り違えを避けるため外側のseller-kitに`.revN`を付け、中の配布用・ソースZIPは上記の標準名を使います。
+
+PostClipは設定・ログイン情報を`%APPDATA%\PostClip`へ保存するZIP展開型アプリです。完全ポータブルと誤解されないよう、配布名に`portable`は付けません。インストーラーは現時点では同梱しません。
+
+## ライセンスの配置
+
+ソースの`LICENSE`はPostClip自作部分のMIT本文です。Windowsの梱包時に同じ内容を`PostClip/LICENSE-PostClip.txt`へコピーし、Electron由来の`PostClip/LICENSE`と`PostClip/LICENSES.chromium.html`はそのまま保持します。`app.asar`内にもソースと同じ`LICENSE`を含めます。
+
+梱包処理は、ソースとアプリ内部のREADME・LICENSE・実装の一致、Electron / Chromiumの表記の存在とPostClipのLICENSEによる上書きがないことを確認します。`SHA256.txt`は新しいZIP名と実際の内容から毎回生成します。
 
 ## 掲載画像
 

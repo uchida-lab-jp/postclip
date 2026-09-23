@@ -5,7 +5,7 @@ Xの投稿URLから、スマホ幅の見やすいPNG画像を作成するWindows
 
 ## 起動する
 
-1. `postclip-v1.1.0.zip` を右クリックし、「すべて展開」を選びます。
+1. `postclip-win-x64-v1.1.0.zip` を右クリックし、「すべて展開」を選びます。
 2. 展開した `PostClip` フォルダーの `PostClip.exe` を開きます。
 3. 投稿のURLを貼り付け、「画像を作成」を押します。
 4. プレビューを確認し、「PNGを保存」を押して保存先を選びます。
@@ -90,7 +90,17 @@ Xの仕様変更、削除、非公開設定、年齢・地域制限、アクセ�
 
 ## ライセンス
 
-PostClipのソースコードはMIT Licenseです（`LICENSE-PostClip.txt`）。同梱のElectron / Chromiumなどの著作権・ライセンスは、`LICENSE` と `LICENSES.chromium.html` に記載されています。Xの投稿・画像・ロゴなどの権利は各権利者に帰属します。作成画像の公開・転載は、権利者の権利とXの利用条件に従って行ってください。PostClipはX非公式ツールです。
+PostClipのソースコードはMIT Licenseです。ファイルは配布物ごとに次のように分けています。
+
+| 配布物 | ファイル | 内容 |
+| --- | --- | --- |
+| ソース | `postclip/LICENSE` | PostClip自作部分のMIT License |
+| Windows配布版 | `PostClip/LICENSE-PostClip.txt` | 同じPostClipのMIT License |
+| Windows配布版 | `PostClip/LICENSE`、`PostClip/LICENSES.chromium.html` | Electron / Chromiumの著作権・ライセンス表記 |
+
+ソースは `postclip-source-v1.1.0.zip` の `postclip/` に収めています。Windows配布版の `LICENSE` はElectron由来のファイルとして保持しています。
+
+Xの投稿・画像・ロゴなどの権利は各権利者に帰属します。作成画像の公開・転載は、権利者の権利とXの利用条件に従って行ってください。PostClipはX非公式ツールです。
 
 ## 1.1.0の変更
 
