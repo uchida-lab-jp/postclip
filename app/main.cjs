@@ -80,12 +80,12 @@ function installHandlers() {
       job = { cancelled: false, window: null };
       currentJob = job;
       latest = null;
-      const result = await deadline(capturePost(post, options, job, progress), 110000, '処理が制限時間を超えました。ネット接続を確認して再試行してください。');
+      const result = await deadline(capturePost(post, options, job, progress), options.conversation === 'thread' ? 360000 : 110000, '処理が制限時間を超えました。ネット接続を確認して再試行してください。');
       if (job.cancelled) throw new Error('キャンセルしました。');
       latest = { ...result, post, options, filename: makeFilename(post, options) };
       await saveSettings(options).catch(() => { result.warnings.push('設定を保存できませんでした。画像は保存できます。'); });
       return { ok: true, dataUrl: `data:image/png;base64,${result.png.toString('base64')}`, width: result.width, height: result.height,
-        bytes: result.png.length, warnings: result.warnings, filename: latest.filename, source: post.url, options };
+        bytes: result.png.length, warnings: result.warnings, postCount: result.postCount, filename: latest.filename, source: post.url, options };
     } catch (error) {
       return { ok: false, cancelled: Boolean(job?.cancelled), error: job?.cancelled ? 'キャンセルしました。' : friendlyError(error) };
     } finally {

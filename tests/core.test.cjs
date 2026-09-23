@@ -17,8 +17,8 @@ test('任意URL・偽装ドメイン・認証情報・不正投稿IDを拒否す
   for (const u of ['file:///etc/passwd', 'https://x.com.evil.test/a/status/123', 'https://x.com@evil.test/a/status/123', 'https://u:p@x.com/a/status/123', 'https://x.com:8443/a/status/123', 'javascript:alert(1)', 'https://x.com/a', 'https://x.com/a/status/000', 'https://x.com/a/status/123<script>', 'https://x.com/a/status/123/other', 'https://127.0.0.1/a/status/123']) assert.throws(() => parsePostUrl(u), u);
 });
 test('設定範囲と不正な型を拒否する', () => {
-  for (const o of [{width:319}, {width:551}, {width:400.1}, {width:'NaN'}, {scale:4}, {padding:23}, {mode:'file'}, {theme:'evil'}, []]) assert.throws(() => validateOptions(o));
-  assert.deepEqual(validateOptions({}), {width:400,scale:3,padding:0,mode:'embed',theme:'light',conversation:true});
+  for (const o of [{width:319}, {width:551}, {width:400.1}, {width:'NaN'}, {scale:4}, {padding:23}, {mode:'file'}, {theme:'evil'}, {conversation:'unknown'}, {conversation:1}, []]) assert.throws(() => validateOptions(o));
+  assert.deepEqual(validateOptions({}), {width:400,scale:3,padding:0,mode:'embed',theme:'light',conversation:'parent'});
 });
 test('縦長画像の上限超過を検出し、画質を下げれば許容する', () => {
   assert.throws(() => checkDimensions(550,10000,3));
@@ -38,4 +38,10 @@ test('第三者の診断・解析送信を許可せず、Xの画像配信だけ�
   assert.equal(allowedRequest('postclip://capture/private.txt'),false);
   for (const u of ['https://x.com/i/api/graphql/test', 'https://platform.twitter.com/widgets.js', 'https://pbs.twimg.com/media/test', 'file:///local/embed.html']) assert.equal(allowedRequest(u), true);
   for (const u of ['https://o123.ingest.sentry.io/api/1/envelope/', 'https://o123.ingest.us.sentry.io/api/1/envelope/', 'https://x.com.evil.test/', 'https://analytics.example.com/', 'http://x.com/', 'https://127.0.0.1/']) assert.equal(allowedRequest(u), false);
+});
+
+test('1.0.0の返信設定を引き継ぎ、親までの選択を保持する', () => {
+  assert.equal(validateOptions({conversation:true}).conversation,'parent');
+  assert.equal(validateOptions({conversation:false}).conversation,'none');
+  assert.equal(validateOptions({conversation:'thread'}).conversation,'thread');
 });

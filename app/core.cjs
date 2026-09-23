@@ -1,6 +1,6 @@
 'use strict';
 
-const DEFAULTS = Object.freeze({ width: 400, scale: 3, theme: 'light', conversation: true, mode: 'embed', padding: 0 });
+const DEFAULTS = Object.freeze({ width: 400, scale: 3, theme: 'light', conversation: 'parent', mode: 'embed', padding: 0 });
 const MAX_PIXELS = 30_000_000;
 
 // 投稿URLを検証し、追跡用パラメーターを含まない正規URLに揃える。
@@ -32,7 +32,11 @@ function validateOptions(value = {}) {
   const mode = value.mode ?? DEFAULTS.mode;
   const theme = value.theme ?? DEFAULTS.theme;
   if (!['embed', 'page'].includes(mode) || !['light', 'dark'].includes(theme)) throw new Error('表示方法の設定が正しくありません。');
-  return { width, scale, padding, mode, theme, conversation: value.conversation === undefined ? true : Boolean(value.conversation) };
+  // 1.0.0のチェックボックス設定も、意味を変えずに引き継ぐ。
+  const legacy = value.conversation ?? DEFAULTS.conversation;
+  const conversation = legacy === true ? 'parent' : legacy === false ? 'none' : legacy;
+  if (!['none', 'parent', 'thread'].includes(conversation)) throw new Error('含める投稿の設定が正しくありません。');
+  return { width, scale, padding, mode, theme, conversation };
 }
 
 // 巨大な画像によるメモリー不足を避け、途中切れのまま成功扱いにしない。

@@ -41,7 +41,7 @@ async function run() {
     return !!main;
   }, 'メイン画面が起動しませんでした。');
   const wc = main.webContents;
-  await wait(() => wc.executeJavaScript('!!window.postclip && document.getElementById("version").textContent === "1.0.0"'), '画面の初期化が完了しませんでした。');
+  await wait(() => wc.executeJavaScript(`!!window.postclip && document.getElementById("version").textContent === ${JSON.stringify(app.getVersion())}`), '画面の初期化が完了しませんでした。');
   await fixtures();
   await wc.executeJavaScript('document.getElementById("url").value="https://x.com/postclip_sample/status/200";document.getElementById("capture-button").click()');
   await wait(() => wc.executeJavaScript('!document.getElementById("download").disabled'), 'サンプル画像の作成が完了しませんでした。');

@@ -5,7 +5,7 @@ const api = window.postclip;
 let busy = false, result = null;
 
 // 入力中の設定をまとめる。
-function options() { return { width: Number($('width').value), scale: Number($('scale').value), conversation: $('conversation').checked, mode: $('mode').value, theme: $('theme').value, padding: Number($('padding').value) }; }
+function options() { return { width: Number($('width').value), scale: Number($('scale').value), conversation: $('conversation').value, mode: $('mode').value, theme: $('theme').value, padding: Number($('padding').value) }; }
 
 // 表示幅と解像度の違いを保存ピクセル数で示す。
 function refreshControls() {
@@ -14,6 +14,7 @@ function refreshControls() {
   document.querySelectorAll('[data-width]').forEach(button => button.classList.toggle('selected', Number(button.dataset.width) === o.width));
   $('theme').disabled = o.mode === 'page';
   $('mode-note').textContent = o.mode === 'page' ? '必要に応じて下の「Xを開く」でログイン。色はX側の設定を使います。' : '公開投稿向け。ログイン不要で利用できます。';
+  $('conversation-note').textContent = o.conversation === 'thread' ? '公開投稿の親を最大20件まで。先頭からこの投稿まで順に保存します。' : o.conversation === 'parent' ? '表示できる直前の返信先を含めます。' : '指定した投稿だけを保存します。';
   if (result && !busy) $('preview-heading').textContent = '設定変更後は「画像を作成」で更新';
 }
 
@@ -60,7 +61,7 @@ async function capture(event) {
     $('result').hidden = false; $('empty-state').hidden = true;
     $('source').hidden = false; $('zoom-control').hidden = false;
     $('actual-size').checked = false; $('result').classList.remove('actual');
-    $('preview-heading').textContent = '完成しました';
+    $('preview-heading').textContent = response.postCount ? `${response.postCount}件の投稿をまとめました` : '完成しました';
     $('image-meta').textContent = `${response.width.toLocaleString()} × ${response.height.toLocaleString()} px · PNG · ${(response.bytes / 1024 / 1024).toFixed(2)} MB`;
     $('stage').scrollTop = 0;
     status(response.warnings.length ? response.warnings.join('\n') : '下端まで確認して、PNGを保存してください。', response.warnings.length ? 'warning' : '');
@@ -79,7 +80,7 @@ async function init() {
   if (!api) { status('PostClipアプリから起動してください。HTMLファイル単体では動作しません。', 'error'); $('capture-button').disabled = true; return; }
   const settings = await api.settings();
   $('version').textContent = settings.version; $('help-version').textContent = settings.version;
-  for (const [key, value] of Object.entries(settings.options)) if ($(key)) { if (key === 'conversation') $(key).checked = value; else $(key).value = String(value); }
+  for (const [key, value] of Object.entries(settings.options)) if ($(key)) $(key).value = String(value);
   refreshControls();
   $('capture-form').addEventListener('submit', capture);
   $('capture-form').addEventListener('input', refreshControls);

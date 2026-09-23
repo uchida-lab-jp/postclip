@@ -19,6 +19,7 @@ npm start
 npm test
 npm run test:electron
 npm run test:ui
+npm run test:thread
 npm run build:win
 ```
 
@@ -29,14 +30,14 @@ Electron 44ではバイナリー導入を`npx install-electron`で明示的に�
 Windowsビルド後に、Python 3の標準ライブラリーで公開用セットを作成します。Pythonが必要なのはこの開発用の梱包処理だけで、利用者には不要です。
 
 ```sh
-python scripts/package-release.py --revision 3
+python scripts/package-release.py
 ```
 
-今回の完成品は`dist/postclip-seller-kit-v1.0.0.rev3.zip`です。アプリのバージョンは`package.json`から取得し、`1.0.0`のままです。`--revision 3`はseller-kitの出力名だけを変えます。通常の新しい製品版ではこの引数を省略し、`postclip-seller-kit-v実バージョン.zip`として出力します。
+今回の完成品は`dist/postclip-seller-kit-v1.1.0.zip`です。アプリのバージョンは`package.json`から取得します。機能追加のため1.1.0へ更新しました。素材だけの再出力で明示された場合は`--revision N`でseller-kit名だけを区別できます。
 
 本体・説明書・BOOTH掲載素材・ソースをすべて含め、seller-kitのZIPを1本だけ渡します。体験版はありません。
 
-ZIP内は`PostClip-seller-kit/`を起点に、`配布用/postclip-v1.0.0.zip`、`ソース/postclip.zip`、`掲載素材/`、`README.txt`、`検証メモ.txt`、`SHA256.txt`を収めます。
+ZIP内は`PostClip-seller-kit/`を起点に、`配布用/postclip-v1.1.0.zip`、`ソース/postclip.zip`、`掲載素材/`、`README.txt`、`検証メモ.txt`、`SHA256.txt`を収めます。
 
 - 配布する製品ZIPには実バージョンを付けます。製品ZIPの中のファイル名・フォルダー名は固定名です。
 - ソースZIPは`postclip.zip`、その最上位フォルダーは`postclip/`に固定します。Gitリポジトリーへそのまま配置できる構成です。
@@ -59,6 +60,7 @@ ZIP内は`PostClip-seller-kit/`を起点に、`配布用/postclip-v1.0.0.zip`、
 | --- | --- |
 | app/main.cjs | ウィンドウ、IPC、保存、設定 |
 | app/capture.cjs | 埋め込み / 投稿画面の撮影、キャンセル、画素数検証 |
+| app/thread.cjs | 返信先の順次取得、20件上限、循環・欠落・キャンセル判定 |
 | app/page-scripts.cjs | 対象投稿特定、DOMの複製、画像待機、高さ測定 |
 | app/network.cjs | X配信元以外の外部通信を遮断 |
 | app/core.cjs | URL・設定・サイズの検証 |
@@ -106,3 +108,9 @@ GUIテストはデスクトップ画面が必要です。Linuxのコンテナー
 - https://chromedevtools.github.io/devtools-protocol/tot/Page/
 
 依存関係の正確なバージョンはpackage-lock.jsonを参照してください。
+
+## 親までの取得
+
+`conversation`は`none` / `parent` / `thread`です。旧boolean設定は`true → parent`、`false → none`へ移行します。threadでは公式埋め込みを`conversation: none`で表示し、主投稿の「返信先:」リンクだけを次の親として読みます。本文中のリンク、引用のリンク、別枝の記事をたどりません。各親を個別に表示し、スクリプトを除いたDOMを先頭から同じ描画面へ並べます。投稿画面モードでも公開埋め込みで親子関係を確認した後、各投稿ページの対象記事だけを撮影します。
+
+構造が判別できない、途中の親が取得できない、同じIDを繰り返す、20件を超える、画像上限を超える場合は完成PNGを返しません。threadの全体制限時間は6分です。検証は`npm run test:thread`、実URLは`POSTCLIP_LIVE_URL`を指定して同じスクリプトを実行します。

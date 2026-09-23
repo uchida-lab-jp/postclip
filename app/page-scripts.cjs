@@ -39,7 +39,7 @@ function isolatePost(id, options) {
   if (!article) throw new Error('対象の投稿を見失いました。もう一度作成してください。');
   const articles = [...document.querySelectorAll('article[data-testid="tweet"]')];
   const index = articles.indexOf(article);
-  const selected = options.conversation && index > 0 ? [articles[index - 1], article] : [article];
+  const selected = options.conversation === 'parent' && index > 0 ? [articles[index - 1], article] : [article];
   const root = document.createElement('div');
   root.id = 'postclip-capture';
   const background = getComputedStyle(document.body).backgroundColor;
@@ -104,11 +104,61 @@ function snapshotEmbeddedFrame() {
     for (const attr of [...el.attributes]) if (/^on/i.test(attr.name)) el.removeAttribute(attr.name);
     if (el.tagName === 'IMG') { el.loading = 'eager'; }
   });
+  const capture = clone.querySelector('#postclip-capture');
+  if (capture) clone.querySelector('body').replaceChildren(capture);
   const csp = document.createElement('meta');
   csp.httpEquiv = 'Content-Security-Policy';
   csp.content = "default-src 'none'; script-src 'none'; style-src 'unsafe-inline' https://*.twimg.com https://*.twitter.com https://*.x.com; img-src data: https://*.twimg.com https://*.twitter.com https://*.x.com; font-src data: https://*.twimg.com https://*.twitter.com https://*.x.com; media-src https://*.twimg.com; base-uri 'none'; form-action 'none'";
   clone.querySelector('head').prepend(csp);
   return '<!doctype html>' + clone.outerHTML;
+}
+
+// 公式埋め込みの主投稿を照合し、本文や引用内のリンクを返信先と取り違えない。
+function inspectEmbeddedParent(id) {
+  // 許可した投稿URLだけを照合し、画像番号付きリンクも親候補から外す。
+  const postLink = value => {
+    try {
+      const u = new URL(value, location.href);
+      const m = u.pathname.match(/^\/(?:[A-Za-z0-9_]{1,15}\/status|i\/web\/status|i\/status)\/(\d{1,25})\/?$/);
+      if (u.protocol !== 'https:' || !['x.com', 'twitter.com', 'www.x.com', 'www.twitter.com'].includes(u.hostname) || u.username || u.password || u.port || !m) return null;
+      return { id: m[1], url: `https://x.com${u.pathname}` };
+    } catch { return null; }
+  };
+  const article = [...document.querySelectorAll('article')].find(a => !a.parentElement.closest('article'));
+  if (!article) throw new Error('投稿の構造を確認できませんでした。');
+  const ownLinks = [...article.querySelectorAll('a[href]')].filter(a =>
+    a.closest('article') === article && !a.closest('[data-testid="tweetText"]') && !a.parentElement.closest('[role="link"]'));
+  if (!ownLinks.some(a => postLink(a.href)?.id === id)) throw new Error('指定した投稿と表示内容が一致しませんでした。');
+  const reply = ownLinks.filter(a => /^(?:返信先\s*[:：]|Replying to\b)/i.test(a.textContent.trim()));
+  if (reply.length > 1) throw new Error('返信先を一意に確認できませんでした。');
+  if (reply.length === 1) {
+    const parent = postLink(reply[0].href);
+    if (!parent || parent.id === id) throw new Error('返信先の投稿URLを確認できませんでした。');
+    return { parentUrl: parent.url };
+  }
+  // 返信表示がリンク以外に変わった場合は先頭と決めつけず、取得を止める。
+  const own = article.cloneNode(true);
+  own.querySelectorAll('article,[role="link"],[data-testid="tweetText"]').forEach(node => node.remove());
+  if (/(?:返信先\s*[:：]|Replying to\b)/i.test(own.textContent)) throw new Error('返信先はありますが、投稿URLを確認できませんでした。');
+  return { parentUrl: null };
+}
+
+// 各投稿の静的DOMを古い順に同じ描画面へ並べ、文字を指定解像度で描き直す。
+function mountThreadSnapshots(items, options) {
+  const parser = new DOMParser();
+  document.body.replaceChildren();
+  for (const item of items) {
+    const parsed = parser.parseFromString(item.snapshot, 'text/html');
+    parsed.head.querySelectorAll('style,link[rel="stylesheet"]').forEach(node => document.head.append(document.importNode(node, true)));
+    const section = document.createElement('section');
+    section.dataset.postclipId = item.post.id;
+    section.style.cssText = `display:flow-root;width:${options.width}px;position:relative;`;
+    // 投稿画面の場合は撮影対象だけを取り出し、周辺のナビゲーションを含めない。
+    const body = options.mode === 'page' ? parsed.querySelector('#postclip-capture') : parsed.body;
+    if (!body) throw new Error('投稿の撮影領域がありません。');
+    while (body.firstChild) section.append(body.firstChild);
+    document.body.append(section);
+  }
 }
 
 // 投稿内容のDOMを変更せず、余白と自動高さの撮影領域だけを追加する。
@@ -127,4 +177,4 @@ function wrapEmbedSnapshot(options) {
   window.scrollTo(0, 0);
 }
 
-module.exports = { inspectPost, expandPost, isolatePost, settleAssets, measureCapture, snapshotEmbeddedFrame, wrapEmbedSnapshot };
+module.exports = { inspectPost, expandPost, isolatePost, settleAssets, measureCapture, snapshotEmbeddedFrame, wrapEmbedSnapshot, inspectEmbeddedParent, mountThreadSnapshots };

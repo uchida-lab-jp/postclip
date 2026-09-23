@@ -1,6 +1,6 @@
 {
   "name": "postclip",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Xの投稿をスマホ幅・高解像度PNGで保存するPCアプリ",
   "main": "app/main.cjs",
   "scripts": {
@@ -8,7 +8,8 @@
     "test": "node --test tests/*.test.cjs",
     "test:electron": "electron tests/capture-smoke.cjs",
     "build:win": "node scripts/build-win.cjs",
-    "test:ui": "electron tests/ui-smoke.cjs"
+    "test:ui": "electron tests/ui-smoke.cjs",
+    "test:thread": "electron tests/thread-smoke.cjs"
   },
   "keywords": [],
   "author": "",
