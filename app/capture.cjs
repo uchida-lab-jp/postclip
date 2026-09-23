@@ -82,12 +82,36 @@ async function loadPage(wc, post, options, job) {
   }, job, 45000, '投稿画面を読み込めませんでした。「Xを開く」で表示とログインを確認するか、かんたんモードをお使いください。');
   const expanded = await wc.executeJavaScript(expression(scripts.expandPost, post.id));
   if (expanded) { await delay(1200, job); await wc.executeJavaScript(expression(scripts.inspectPost, post.id)); }
-  await delay(700, job);
-  return wc.executeJavaScript(expression(scripts.isolatePost, post.id, options));
+  await wc.executeJavaScript(expression(scripts.revealPost, post.id, options.conversation));
+  let lastSignature = null, stable = 0, seenNote = false;
+  const notesStarted = Date.now();
+  let noteState;
+  await waitUntil(async () => {
+    await wc.executeJavaScript(expression(scripts.inspectPost, post.id));
+    const note = await wc.executeJavaScript(expression(scripts.inspectCommunityNote, post.id));
+    noteState = note;
+    seenNote ||= note.found || note.hint;
+    const signature = note.signature || '';
+    stable = signature === lastSignature ? stable + 1 : 0;
+    lastSignature = signature;
+    if (stable < 4) return false;
+    if (!options.includeNotes) return true;
+    if (note.found && !note.pending) return true;
+    return !seenNote && !note.pending && Date.now() - notesStarted >= 5000;
+  }, job, options.includeNotes ? 15000 : 3500, 'コミュニティノートの読み込みを確認できませんでした。「Xを開く」で表示を確認してから、もう一度作成してください。');
+  await wc.executeJavaScript(expression(scripts.settleAssets));
+  noteState = await wc.executeJavaScript(expression(scripts.inspectCommunityNote, post.id));
+  if (options.includeNotes && !noteState.found && (seenNote || noteState.hint || noteState.pending)) {
+    throw new Error('コミュニティノートの表示が確定していません。少し待って、もう一度作成してください。');
+  }
+  const result = await wc.executeJavaScript(expression(scripts.isolatePost, post.id, { ...options, noteExpected: options.includeNotes && noteState.found }));
+  return { ...result, notesStatus: result.notesIncluded ? 'included' : options.includeNotes ? 'not-shown' : 'unchecked' };
 }
 
 // Xの投稿をブラウザーの描画倍率で直接PNG化する。
 async function renderPost(post, options, job, report) {
+  // ノートを求めたときは埋め込みの省略に依存せず、Xの投稿画面を使う。
+  if (options.includeNotes) options = { ...options, mode: 'page' };
   const outerWidth = options.width + options.padding * 2;
   const win = new BrowserWindow({ show: false, width: outerWidth, height: 1000, useContentSize: true, backgroundColor: options.theme === 'dark' ? '#15202b' : '#ffffff',
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, offscreen: true,
@@ -99,13 +123,15 @@ async function renderPost(post, options, job, report) {
   const warnings = [];
   let parentIncluded = null;
   let postCount = null;
+  let notesIncluded = false;
+  let notesStatus = 'unchecked';
   try {
     // 初期フレームの生成前にDPIを変更すると、一部環境でChromiumが落ちる。
     await deadline(win.loadURL('about:blank'), 15000, '撮影画面を開始できませんでした。再試行してください。');
     wc.debugger.attach('1.3');
     await wc.debugger.sendCommand('Emulation.setDeviceMetricsOverride', { width: options.width, height: 1000, deviceScaleFactor: options.scale, mobile: false });
     await wc.debugger.sendCommand('Emulation.setScrollbarsHidden', { hidden: true });
-    report('Xから投稿を読み込んでいます…', 18);
+    report(options.includeNotes ? '投稿とコミュニティノートを読み込んでいます…' : 'Xから投稿を読み込んでいます…', 18);
     if (options.conversation === 'thread') {
       let items = await collectThread(post, current => loadEmbedded(wc, current, options, job, false, true), job, report);
       if (options.mode === 'page') {
@@ -114,6 +140,7 @@ async function renderPost(post, options, job, report) {
           report(`投稿画面を読み込んでいます… ${index + 1} / ${items.length}件`, 45 + Math.floor(index / items.length * 9));
           const state = await loadPage(wc, item.post, { ...options, conversation: 'none', padding: 0 }, job);
           warnings.push(...state.warnings);
+          if (item.post.id === post.id) { notesIncluded = state.notesIncluded; notesStatus = state.notesStatus; }
           pages.push({ ...item, snapshot: await wc.executeJavaScript(expression(scripts.snapshotEmbeddedFrame)) });
         }
         items = pages;
@@ -131,6 +158,8 @@ async function renderPost(post, options, job, report) {
       const result = await loadPage(wc, post, options, job);
       warnings.push(...result.warnings);
       parentIncluded = result.parentIncluded;
+      notesIncluded = result.notesIncluded;
+      notesStatus = result.notesStatus;
     }
     report('文字と画像の表示を整えています…', 55);
     const frames = [wc.mainFrame, ...wc.mainFrame.framesInSubtree.filter(f => f !== wc.mainFrame)];
@@ -166,7 +195,7 @@ async function renderPost(post, options, job, report) {
     const png = Buffer.from(result.data, 'base64');
     const width = png.readUInt32BE(16), height = png.readUInt32BE(20);
     if (width !== dims.width * options.scale || height !== dims.height * options.scale) throw new Error('画像の解像度を検証できませんでした。もう一度作成してください。');
-    return { png, width, height, warnings: [...new Set(warnings)], parentIncluded, postCount };
+    return { png, width, height, warnings: [...new Set(warnings)], parentIncluded, postCount, notesIncluded, notesStatus };
   } finally {
     if (!win.isDestroyed()) win.destroy();
     job.window = null;

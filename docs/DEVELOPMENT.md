@@ -5,6 +5,8 @@
 ## 必要なもの
 
 - Node.js 22.12以上（利用するElectronとpackagerのenginesも確認）
+- 検証環境：Node.js 24.19.0 / npm 11.9.0 / Python 3.12.14
+- Electron 44.4.3 / @electron/packager 20.3.0（package-lock.jsonで固定）
 - npm
 - インターネット接続（開発依存関係とElectronバイナリーの取得）
 
@@ -20,6 +22,8 @@ npm test
 npm run test:electron
 npm run test:ui
 npm run test:thread
+npm run test:notes
+npm run test:parent-layout
 npm run build:win
 ```
 
@@ -30,14 +34,14 @@ Electron 44ではバイナリー導入を`npx install-electron`で明示的に�
 Windowsビルド後に、Python 3の標準ライブラリーで公開用セットを作成します。Pythonが必要なのはこの開発用の梱包処理だけで、利用者には不要です。
 
 ```sh
-python scripts/package-release.py --revision 2
+python scripts/package-release.py
 ```
 
-今回の完成品は`dist/postclip-seller-kit-v1.1.0.rev2.zip`です。ファイル名とライセンス配置を統一した再出力のため、アプリの実バージョンは1.1.0を維持します。バージョンは`package.json`から取得します。通常の製品版は`--revision`を省略し、`postclip-seller-kit-v実バージョン.zip`として出力します。同じアプリ版を再出力するときは、必要に応じて`--revision N`でseller-kit名だけを区別します。
+通常の完成品は`dist/postclip-seller-kit-v1.1.2.zip`です。バージョンの基準は`package.json`です。`npm run sync:version`が現行の説明書とZIP参照へ反映し、Windowsビルドの前にも自動実行します。UIは実行時にアプリのバージョンを取得します。過去の変更履歴の版番号は保持します。同じ製品版の再納品では`--revision N`で外側のseller-kit名だけを区別します。
 
 本体・説明書・BOOTH掲載素材・ソースをすべて含め、seller-kitのZIPを1本だけ渡します。体験版はありません。
 
-ZIP内は`PostClip-seller-kit/`を起点に、`配布用/postclip-win-x64-v1.1.0.zip`、`ソース/postclip-source-v1.1.0.zip`、`掲載素材/`、`README.txt`、`検証メモ.txt`、`SHA256.txt`を収めます。
+ZIP内は`PostClip-seller-kit/`を起点に、`配布用/postclip-win-x64-v1.1.2.zip`、`ソース/postclip-source-v1.1.2.zip`、`掲載素材/`、`README.txt`、`検証メモ.txt`、`SHA256.txt`を収めます。
 
 - 配布する製品ZIPには対象OS・CPUと実バージョンを付けます。製品ZIP内のルートは`PostClip/`、中のファイル名・フォルダー名は固定名です。
 - ソースZIPは`postclip-source-v実バージョン.zip`、その最上位フォルダーは`postclip/`に固定します。Gitリポジトリーへそのまま配置できる構成です。
@@ -133,3 +137,19 @@ GUIテストはデスクトップ画面が必要です。Linuxのコンテナー
 `conversation`は`none` / `parent` / `thread`です。旧boolean設定は`true → parent`、`false → none`へ移行します。threadでは公式埋め込みを`conversation: none`で表示し、主投稿の「返信先:」リンクだけを次の親として読みます。本文中のリンク、引用のリンク、別枝の記事をたどりません。各親を個別に表示し、スクリプトを除いたDOMを先頭から同じ描画面へ並べます。投稿画面モードでも公開埋め込みで親子関係を確認した後、各投稿ページの対象記事だけを撮影します。
 
 構造が判別できない、途中の親が取得できない、同じIDを繰り返す、20件を超える、画像上限を超える場合は完成PNGを返しません。threadの全体制限時間は6分です。検証は`npm run test:thread`、実URLは`POSTCLIP_LIVE_URL`を指定して同じスクリプトを実行します。
+
+## コミュニティノートと設定移行
+
+`includeNotes`はbooleanで既定値trueです。オンのときは投稿画面モードを使います。ノートが表示されていない記事は5秒以上の待機と安定確認後に保存し、`notesStatus: not-shown`をUIへ返します。ノートの目印や読み込み表示がある場合は、本文が安定するまで最大15秒待ちます。完了しない・読み込み中にノートを見失う場合はPNGを返しません。画像の読込待機後にも再確認します。ノート不在の確定判定や、OCRによる補完はしません。
+
+保存設定には`settingsVersion: 2`を付けます。旧設定は`restoreOptions`で初回だけノートありへ移行し、ほかの設定は保持します。移行後の明示的なオフは次回起動時も引き継ぎます。設定の保存は従来どおり画像作成成功時にも行います。
+
+新旧X画面の投稿自身へのリンクで記事を特定します。引用・本文のリンクを投稿自身のリンクとして扱いません。ノートは同じ記事または同じ表示セル内のノート識別子・詳細リンクと見出しで確認します。別投稿・引用内のノートは指定記事のノートと取り違えません。記事を切り出す前に遅延画像を表示し、同じセル内のノートもCSS変数とともに保持します。
+
+`npm run test:notes`で新旧DOM、記事外ノート、遅延、別投稿や引用の除外、ノートなしの成功、読込未完了時の失敗、キャンセルを確認します。UIテストは旧設定の移行、明示的なオフの維持、親までの取得との組合せ、保存PNGのバイト一致も確認します。
+
+## 引用を含む返信先の配置
+
+表示セルに複数のarticleがあっても、それらが選択した投稿とその配下の引用であれば外枠ごと保持します。単純な記事数で外枠を捨てると、CSSの余白・接続線・引用幅が壊れます。別投稿を含む表示セルを丸ごと選択しないよう、DOMの所属を検証します。
+
+`npm run test:parent-layout`は引用記事を含む返信先を使い、320・430・550px、外側余白、ダーク、新旧表示セルを確認します。親と返信の線とアイコンの中心、線の上下接続、引用右端が撮影幅に収まることを実DOMで検証します。

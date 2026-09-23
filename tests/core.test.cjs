@@ -1,7 +1,7 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { parsePostUrl, validateOptions, checkDimensions, makeFilename, isXNavigation } = require('../app/core.cjs');
+const { parsePostUrl, validateOptions, restoreOptions, SETTINGS_VERSION, checkDimensions, makeFilename, isXNavigation } = require('../app/core.cjs');
 const { allowedRequest } = require('../app/network.cjs');
 
 test('投稿IDの精度を保ち、追跡パラメーターと画像番号を除去する', () => {
@@ -17,8 +17,17 @@ test('任意URL・偽装ドメイン・認証情報・不正投稿IDを拒否す
   for (const u of ['file:///etc/passwd', 'https://x.com.evil.test/a/status/123', 'https://x.com@evil.test/a/status/123', 'https://u:p@x.com/a/status/123', 'https://x.com:8443/a/status/123', 'javascript:alert(1)', 'https://x.com/a', 'https://x.com/a/status/000', 'https://x.com/a/status/123<script>', 'https://x.com/a/status/123/other', 'https://127.0.0.1/a/status/123']) assert.throws(() => parsePostUrl(u), u);
 });
 test('設定範囲と不正な型を拒否する', () => {
-  for (const o of [{width:319}, {width:551}, {width:400.1}, {width:'NaN'}, {scale:4}, {padding:23}, {mode:'file'}, {theme:'evil'}, {conversation:'unknown'}, {conversation:1}, []]) assert.throws(() => validateOptions(o));
-  assert.deepEqual(validateOptions({}), {width:400,scale:3,padding:0,mode:'embed',theme:'light',conversation:'parent'});
+  for (const o of [{width:319}, {width:551}, {width:400.1}, {width:'NaN'}, {scale:4}, {padding:23}, {mode:'file'}, {theme:'evil'}, {conversation:'unknown'}, {conversation:1}, {includeNotes:'false'}, {includeNotes:1}, []]) assert.throws(() => validateOptions(o));
+  assert.deepEqual(validateOptions({}), {width:400,scale:3,padding:0,mode:'embed',theme:'light',conversation:'parent',includeNotes:true});
+  assert.equal(validateOptions({includeNotes:true}).includeNotes,true);
+});
+
+test('旧版のノート設定を一度だけオンへ移行し、その後の明示的なオフを保持する', () => {
+  const migrated = restoreOptions({width:430,scale:2,conversation:false,includeNotes:false});
+  assert.equal(migrated.includeNotes,true);
+  assert.equal(migrated.width,430);assert.equal(migrated.scale,2);assert.equal(migrated.conversation,'none');
+  assert.equal(restoreOptions({...migrated,settingsVersion:SETTINGS_VERSION,includeNotes:false}).includeNotes,false);
+  assert.equal(validateOptions({includeNotes:false}).includeNotes,false);
 });
 test('縦長画像の上限超過を検出し、画質を下げれば許容する', () => {
   assert.throws(() => checkDimensions(550,10000,3));

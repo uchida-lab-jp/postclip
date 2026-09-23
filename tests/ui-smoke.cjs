@@ -9,7 +9,7 @@ const out = path.resolve(__dirname, '../qa');
 // テスト時だけ独立した設定フォルダーを使い、利用者の設定に触れない。
 app.setPath('userData', path.join(os.tmpdir(), `postclip-ui-test-${process.pid}`));
 fsSync.mkdirSync(app.getPath('userData'), {recursive:true});
-fsSync.writeFileSync(path.join(app.getPath('userData'),'settings.json'), JSON.stringify({conversation:false}));
+fsSync.writeFileSync(path.join(app.getPath('userData'),'settings.json'), JSON.stringify({conversation:false,includeNotes:false}));
 app.getVersion = () => require('../package.json').version;
 if (process.env.POSTCLIP_SKIP_SINGLETON_TEST === '1') app.requestSingleInstanceLock = () => true;
 let main;
@@ -29,6 +29,12 @@ async function fixtures() {
     if(new URL(request.url).pathname==='/widgets.js')return new Response(`window.twttr={widgets:{createTweet:async(id,mount,opts)=>{const f=document.createElement('iframe');f.style.cssText='width:'+opts.width+'px;height:620px';f.src='https://platform.twitter.com/sample';mount.append(f);await new Promise(r=>f.onload=r);return f}}};`,{headers:{'content-type':'application/javascript'}});
     return new Response(sample,{headers:{'content-type':'text/html;charset=utf-8'}});
   });
+  const withNote = sample.replace('</article>', '<div data-testid="birdwatch-pivot"><div>Readers added context</div><p>テスト用のコミュニティノート本文です。背景情報も保存します。</p></div></article>');
+  await session.fromPartition('persist:postclip-x').protocol.handle('https', request => {
+    const url = new URL(request.url);
+    if (url.pathname === '/widgets.js') return new Response(`window.twttr={widgets:{createTweet:async(id,mount,opts)=>{const f=document.createElement('iframe');f.style.cssText='width:'+opts.width+'px;height:620px';f.src='https://platform.twitter.com/sample';mount.append(f);await new Promise(r=>f.onload=r);return f}}};`,{headers:{'content-type':'application/javascript'}});
+    return new Response(url.hostname === 'x.com' ? withNote : sample, {headers:{'content-type':'text/html;charset=utf-8'}});
+  });
 }
 
 // アプリの実際のIPCを通して、作成・保存・コピー・設定再読込を検証する。
@@ -45,6 +51,8 @@ async function run() {
   assert.equal(invalid.ok,false);
   await fixtures();
   assert.equal(await wc.executeJavaScript('document.getElementById("conversation").value'),'none');
+  assert.equal(await wc.executeJavaScript('document.getElementById("includeNotes").checked'),true);
+  await wc.executeJavaScript('document.getElementById("includeNotes").click()');
   assert.deepEqual(await wc.executeJavaScript('[...document.getElementById("conversation").options].map(o=>o.value)'),['none','parent','thread']);
   await wc.executeJavaScript('document.getElementById("conversation").value="thread";document.getElementById("conversation").dispatchEvent(new Event("input",{bubbles:true}))');
   await wc.executeJavaScript('document.getElementById("url").value="https://x.com/postclip_sample/status/200";document.getElementById("capture-button").click()');
@@ -75,12 +83,23 @@ async function run() {
   await wc.executeJavaScript('document.getElementById("help-close").click()');
   await wc.reload();
   await wait(()=>wc.executeJavaScript('document.getElementById("conversation").value === "thread"'),'親までの設定が復元されない');
+  assert.equal(await wc.executeJavaScript('document.getElementById("includeNotes").checked'),false);
+  assert.equal(JSON.parse(await fs.readFile(path.join(app.getPath('userData'),'settings.json'),'utf8')).settingsVersion,2);
+  await wc.executeJavaScript('document.getElementById("includeNotes").click();document.getElementById("url").value="https://x.com/postclip_sample/status/200";document.getElementById("capture-button").click()');
+  await wait(()=>wc.executeJavaScript('!document.getElementById("download").disabled'),'ノート付き画像作成が完了しない');
+  assert.equal(await wc.executeJavaScript('document.getElementById("preview-heading").textContent'),'コミュニティノートを含めて作成しました');
+  assert.equal(await wc.executeJavaScript('document.getElementById("mode").disabled'),true);
+  dialog.showSaveDialog=async()=>({canceled:false,filePath:file});
+  assert.equal((await wc.executeJavaScript('window.postclip.save()')).ok,true);
+  assert.equal((await fs.readFile(file)).toString('base64'), (await wc.executeJavaScript('document.getElementById("result-image").src')).split(',')[1]);
+  await wc.reload();
+  await wait(()=>wc.executeJavaScript('document.getElementById("includeNotes").checked'),'ノート付き保存の設定が復元されない');
   main.setSize(920,680);
   await new Promise(r=>setTimeout(r,300));
   const overflow=await wc.executeJavaScript('document.documentElement.scrollWidth>innerWidth');
   assert.equal(overflow,false);
   await fs.writeFile(path.join(out,'ui-small.png'),(await wc.capturePage()).toPNG());
-  console.log('UI_PASS: actual capture IPC, PNG save bytes, save cancel, clipboard, isolation, help, preferences, small layout');
+  console.log('UI_PASS: actual capture IPC, PNG save bytes, notes/thread option and persistence, save cancel, clipboard, isolation, help, small layout');
 }
 require('../app/main.cjs');
 app.whenReady().then(run).then(()=>app.quit()).catch(error=>{console.error(error.stack);app.exit(1);});

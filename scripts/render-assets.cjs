@@ -24,13 +24,14 @@ async function wait(check, message, timeout = 30000) {
 // 架空投稿だけを返し、掲載画像の作成時にXへ接続しないようにする。
 async function fixtures() {
   const sample = await fs.readFile(path.resolve(__dirname, '../tests/fixtures/sample.html'), 'utf8');
-  const captureSession = session.fromPartition('postclip-embed');
-  await captureSession.protocol.handle('https', request => {
-    if (new URL(request.url).pathname === '/widgets.js') {
-      return new Response(`window.twttr={widgets:{createTweet:async(id,mount,opts)=>{const f=document.createElement('iframe');f.style.cssText='width:'+opts.width+'px;height:620px';f.src='https://platform.twitter.com/sample';mount.append(f);await new Promise(r=>f.onload=r);return f}}};`, { headers: { 'content-type': 'application/javascript' } });
-    }
-    return new Response(sample, { headers: { 'content-type': 'text/html;charset=utf-8' } });
-  });
+  for (const name of ['postclip-embed', 'persist:postclip-x']) {
+    await session.fromPartition(name).protocol.handle('https', request => {
+      if (new URL(request.url).pathname === '/widgets.js') {
+        return new Response(`window.twttr={widgets:{createTweet:async(id,mount,opts)=>{const f=document.createElement('iframe');f.style.cssText='width:'+opts.width+'px;height:620px';f.src='https://platform.twitter.com/sample';mount.append(f);await new Promise(r=>f.onload=r);return f}}};`, { headers: { 'content-type': 'application/javascript' } });
+      }
+      return new Response(sample, { headers: { 'content-type': 'text/html;charset=utf-8' } });
+    });
+  }
 }
 
 // 実際のアプリで架空投稿を作成し、正方形の画面紹介画像を撮影する。

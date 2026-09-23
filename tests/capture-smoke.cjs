@@ -34,7 +34,7 @@ async function installFixtures() {
 
 // 実際のPNG寸法を確認し、下端のピクセルまで描画されているか検証する。
 async function captureCase(name, optionValues, check) {
-  const options=validateOptions(optionValues);
+  const options=validateOptions({includeNotes:false,...optionValues});
   const result=await capturePost(parsePostUrl('https://x.com/postclip_sample/status/200'),options,{cancelled:false,window:null},()=>{});
   await fs.writeFile(path.join(out,`${name}.png`),result.png);
   assert.equal(result.width,(options.width+options.padding*2)*options.scale);
@@ -51,7 +51,7 @@ async function live() {
   const cases=[['live-embed',url,'embed'],['live-page',url,'page']];
   for(const [name,url,mode] of cases) {
     try {
-      const result=await capturePost(parsePostUrl(url),validateOptions({mode}),{cancelled:false,window:null},message=>process.stdout.write(message+'\n'));
+      const result=await capturePost(parsePostUrl(url),validateOptions({mode,includeNotes:false}),{cancelled:false,window:null},message=>process.stdout.write(message+'\n'));
       await fs.writeFile(path.join(out,name+'.png'),result.png);
       process.stdout.write(JSON.stringify({live:name,ok:true,width:result.width,height:result.height,warnings:result.warnings})+'\n');
     } catch(e){process.stdout.write(JSON.stringify({live:name,ok:false,error:e.message})+'\n');}
@@ -79,9 +79,9 @@ async function run() {
   scenario({missing:true,more:true});
   await captureCase('missing-and-more',{mode:'page'},r=>assert.ok(r.warnings.length>=2));
   scenario({});
-  await assert.rejects(()=>capturePost(parsePostUrl('x.com/a/status/404'),validateOptions({}),{cancelled:false},()=>{}),/埋め込み表示できません/);
+  await assert.rejects(()=>capturePost(parsePostUrl('x.com/a/status/404'),validateOptions({includeNotes:false}),{cancelled:false},()=>{}),/埋め込み表示できません/);
   const job={cancelled:false,window:null};
-  const promise=capturePost(parsePostUrl('x.com/a/status/200'),validateOptions({}),job,()=>{});
+  const promise=capturePost(parsePostUrl('x.com/a/status/200'),validateOptions({includeNotes:false}),job,()=>{});
   setTimeout(()=>{job.cancelled=true;if(job.window&&!job.window.isDestroyed())job.window.destroy();},100);
   await assert.rejects(()=>promise);
   process.stdout.write('SMOKE_PASS\n');

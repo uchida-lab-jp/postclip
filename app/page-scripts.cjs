@@ -2,15 +2,20 @@
 
 // 対象の投稿自身へのリンクで記事を特定し、引用内の別投稿と取り違えない。
 function inspectPost(id) {
-  const articles = [...document.querySelectorAll('article[data-testid="tweet"]')];
+  const articles = [...document.querySelectorAll('article')].filter(a => !a.parentElement.closest('article'));
   const match = articles.find(article => {
-    const time = article.querySelector('time');
+    // 引用・本文のリンクを外し、新旧X画面の投稿自身のリンクだけを比較する。
+    const ownLinks = [...article.querySelectorAll('a[href]')].filter(a => {
+      const quote = a.parentElement.closest('[role="link"]');
+      return a.closest('article') === article && !a.closest('[data-testid="tweetText"]') && (!quote || !article.contains(quote));
+    });
+    const time = ownLinks.map(a => a.querySelector('time')).find(Boolean);
     const primaryLink = time && time.closest('a');
     const path = primaryLink ? new URL(primaryLink.href, location.href).pathname : '';
     if (new RegExp(`/status/${id}/?$`).test(path)) return true;
     // 詳細表示ではタイムスタンプのtime要素がない場合もある。
     if (time) return false;
-    return [...article.querySelectorAll('a[href]')].some(a => new RegExp(`/status/${id}/?$`).test(new URL(a.href, location.href).pathname));
+    return ownLinks.some(a => new RegExp(`/status/${id}/?$`).test(new URL(a.href, location.href).pathname));
   });
   if (match) {
     match.setAttribute('data-postclip-target', id);
@@ -20,6 +25,64 @@ function inspectPost(id) {
   const unavailable = /このポストは表示できません|このポストは削除|このアカウントは存在しません|This Post is unavailable|This account doesn.t exist|This Post was deleted/i.test(text);
   const loginGate = !articles.length && /ログイン|Sign in|Log in/.test(text) && !!document.querySelector('a[href*="/login"],a[href*="/i/flow/login"],input[autocomplete="username"]');
   return { found: false, unavailable, login: /\/i\/flow\/login/.test(location.pathname) || loginGate };
+}
+
+// 対象記事に属するノート本文を特定し、リンクだけ・引用・返信のノートを区別する。
+function inspectCommunityNote(id) {
+  const article = document.querySelector(`[data-postclip-target="${id}"]`);
+  if (!article) return { found: false };
+  const cell = article.closest('[data-testid="cellInnerDiv"], [data-timeline-entry]');
+  const scope = cell && [...cell.querySelectorAll('article')].every(a => a === article || article.contains(a)) ? cell : article;
+  // Xのノートカードに実在する見出しと、ノート詳細リンクを組み合わせて調べる。
+  const heading = /^(?:閲覧したユーザーが(?:他のユーザーにとって役立つと思う)?背景情報を追加しました|読者が背景情報を追加しました|Readers added context(?: they thought people might want to know)?|Readers added a community note)$/i;
+  const selectors = '[data-testid="birdwatch-pivot"], [data-testid="birdwatch-pivot-note"], [data-testid="communityNote"], a[href*="/i/birdwatch/n/"], a[href*="/i/communitynotes/"]';
+  const candidates = [...scope.querySelectorAll(selectors)];
+  for (const el of scope.querySelectorAll('span,div')) {
+    if (heading.test(el.textContent.trim()) && ![...el.children].some(c => heading.test(c.textContent.trim()))) candidates.push(el);
+  }
+  let hint = false;
+  for (const marker of candidates) {
+    if (marker.closest('[data-testid="tweetText"]')) continue;
+    const owner = marker.closest('article');
+    if (owner && owner !== article) continue;
+    const quote = marker.parentElement.closest('[role="link"]');
+    if (quote && article.contains(quote) && quote.querySelector('a[href*="/status/"]')) continue;
+    if (marker.matches(selectors)) hint = true;
+    let node = marker;
+    while (node && node !== scope && node !== article) {
+      const text = (node.innerText || '').trim();
+      const hasHeading = [...node.querySelectorAll('span,div')].some(e => heading.test(e.textContent.trim())) || heading.test(node.getAttribute('aria-label') || '');
+      // 投稿本文までさかのぼってノートと誤認しない。ノートの本文領域が必要。
+      const body = text.split('\n').filter(line => !heading.test(line.trim())).join('').trim();
+      const identified = node.matches(selectors) || !!node.querySelector(selectors);
+      if (identified && hasHeading && body.length >= 12 && !node.querySelector('[data-testid="tweetText"],time,a[href*="/status/"]')) {
+        node.setAttribute('data-postclip-note', id);
+        return { found: true, text, signature: text, external: !article.contains(node) };
+      }
+      node = node.parentElement;
+    }
+  }
+  return { found: false, hint, pending: !!scope.querySelector('[role="progressbar"],[aria-busy="true"]') };
+}
+
+// 返信先を含む対象投稿と写真を可視領域へ送り、Xの遅延表示を開始する。
+async function revealPost(id, conversation) {
+  const article = document.querySelector(`[data-postclip-target="${id}"]`);
+  if (!article) return;
+  const articles = [...document.querySelectorAll('article')].filter(a => !a.parentElement.closest('article'));
+  const index = articles.indexOf(article);
+  const selected = conversation === 'parent' && index > 0 ? [articles[index - 1], article] : [article];
+  for (const source of selected) {
+    source.scrollIntoView({ block: 'start' });
+    await new Promise(resolve => setTimeout(resolve, 200));
+    const media = [...source.querySelectorAll('a[href*="/photo/"],img, [data-testid="birdwatch-pivot"]')];
+    for (const node of media.slice(0, 12)) {
+      if (node.tagName === 'IMG') node.loading = 'eager';
+      node.scrollIntoView({ block: 'center' });
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  }
+  article.scrollIntoView({ block: 'end' });
 }
 
 // 本文の展開ボタンだけを操作し、引用や返信先の省略は別途通知する。
@@ -37,7 +100,7 @@ function expandPost(id) {
 function isolatePost(id, options) {
   const article = document.querySelector(`[data-postclip-target="${id}"]`);
   if (!article) throw new Error('対象の投稿を見失いました。もう一度作成してください。');
-  const articles = [...document.querySelectorAll('article[data-testid="tweet"]')];
+  const articles = [...document.querySelectorAll('article')].filter(a => !a.parentElement.closest('article'));
   const index = articles.indexOf(article);
   const selected = options.conversation === 'parent' && index > 0 ? [articles[index - 1], article] : [article];
   const root = document.createElement('div');
@@ -46,10 +109,19 @@ function isolatePost(id, options) {
   root.style.cssText = `position:relative;box-sizing:border-box;width:${options.width + options.padding * 2}px;padding:${options.padding}px;background:${background === 'rgba(0, 0, 0, 0)' ? '#fff' : background};overflow:visible;`;
   const warnings = [];
   for (const source of selected) {
-    const clone = source.cloneNode(true);
+    const cell = source.closest('[data-testid="cellInnerDiv"], [data-timeline-entry]');
+    // 引用記事は同じ投稿の内容なので、記事数ではなく所属で外枠の保持を判断する。
+    const container = cell && [...cell.querySelectorAll('article')].every(a => a === source || source.contains(a)) ? cell : source;
+    const clone = container.cloneNode(true);
     clone.style.width = `${options.width}px`;
     clone.style.boxSizing = 'border-box';
     clone.style.maxWidth = 'none';
+    clone.style.position = 'relative';
+    clone.style.transform = 'none';
+    clone.style.top = 'auto';
+    // 祖先が持つ色・余白などのCSS変数を、切り出した投稿へ引き継ぐ。
+    const computed = getComputedStyle(container);
+    for (const name of computed) if (name.startsWith('--')) clone.style.setProperty(name, computed.getPropertyValue(name));
     clone.querySelectorAll('video').forEach(video => { video.autoplay = false; video.pause(); });
     clone.querySelectorAll('img').forEach(img => { img.loading = 'eager'; });
     root.append(clone);
@@ -62,7 +134,9 @@ function isolatePost(id, options) {
   document.head.append(style);
   document.body.append(root);
   window.scrollTo(0, 0);
-  return { warnings: [...new Set(warnings)], parentIncluded: selected.length > 1, background };
+  const notesIncluded = !!root.querySelector(`[data-postclip-note="${id}"]`);
+  if (options.noteExpected && !notesIncluded) throw new Error('読み込んだコミュニティノートを撮影範囲に含められませんでした。もう一度作成してください。');
+  return { warnings: [...new Set(warnings)], parentIncluded: selected.length > 1, notesIncluded, background };
 }
 
 // フォントと表示画像の読込完了を待ち、欠落があれば呼出元に伝える。
@@ -177,4 +251,4 @@ function wrapEmbedSnapshot(options) {
   window.scrollTo(0, 0);
 }
 
-module.exports = { inspectPost, expandPost, isolatePost, settleAssets, measureCapture, snapshotEmbeddedFrame, wrapEmbedSnapshot, inspectEmbeddedParent, mountThreadSnapshots };
+module.exports = { inspectPost, inspectCommunityNote, revealPost, expandPost, isolatePost, settleAssets, measureCapture, snapshotEmbeddedFrame, wrapEmbedSnapshot, inspectEmbeddedParent, mountThreadSnapshots };

@@ -12,7 +12,7 @@ async function build() {
     icon: path.resolve(__dirname, '..', 'app', 'assets', 'icon.ico'),
     appVersion: version, buildVersion: version, appCopyright: 'PostClip contributors',
     win32metadata: { CompanyName: 'PostClip', ProductName: 'PostClip', FileDescription: 'PostClip - X post capture', OriginalFilename: 'PostClip.exe' },
-    ignore: [/^\/tests(?:\/|$)/, /^\/scripts(?:\/|$)/, /^\/dist(?:\/|$)/, /^\/qa(?:\/|$)/, /^\/docs(?:\/|$)/, /^\/booth(?:\/|$)/, /^\/assets-output(?:\/|$)/, /^\/\.git(?:\/|$)/, /^\/package-lock\.json$/, /\.log$/]
+    ignore: [/^\/tests(?:\/|$)/, /^\/scripts(?:\/|$)/, /^\/dist(?:\/|$)/, /^\/qa(?:\/|$)/, /^\/docs(?:\/|$)/, /^\/booth(?:\/|$)/, /^\/assets-output(?:\/|$)/, /^\/\.git(?:\/|$)/, /^\/package-lock\.json$/, /^\/LICENSE-PostClip\.txt$/, /\.log$/]
   });
   process.stdout.write(paths.join('\n') + '\n');
 }

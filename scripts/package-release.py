@@ -25,7 +25,7 @@ def sha256(path):
 
 
 # ビルド済みEXEの対象環境と、同梱されたアプリの内容を確認する。
-def check_build(runtime, version):
+def check_build(runtime, version, source_root=ROOT):
     exe = runtime / "PostClip.exe"
     with exe.open("rb") as stream:
         if stream.read(2) != b"MZ":
@@ -36,8 +36,8 @@ def check_build(runtime, version):
         if stream.read(6) != b"PE\x00\x00\x64\x86":
             raise RuntimeError("PostClip.exeがWindows x64向けではありません。")
     sources = ["README.md", "LICENSE"] + [
-        str(path.relative_to(ROOT)).replace("\\", "/")
-        for path in sorted((ROOT / "app").rglob("*")) if path.is_file()
+        str(path.relative_to(source_root)).replace("\\", "/")
+        for path in sorted((source_root / "app").rglob("*")) if path.is_file()
     ]
     script = r"""
 import fs from 'node:fs';
@@ -64,7 +64,7 @@ console.log('Bundled app matches source: ' + input.version + ' (' + input.source
 """
     subprocess.run(
         ["node", "--input-type=module", "-e", script],
-        input=json.dumps({"root": str(ROOT), "archive": str(runtime / "resources/app.asar"),
+        input=json.dumps({"root": str(source_root), "archive": str(runtime / "resources/app.asar"),
                           "version": version, "sources": sources}),
         text=True, check=True, cwd=ROOT,
     )
@@ -89,6 +89,49 @@ def write_zip(target, entries, allowed_versioned=()):
     print(f"Verified {target.name}: {len(entries)} files, {target.stat().st_size:,} bytes")
 
 
+# 完成ZIPを別の場所へ展開し、実ファイル・ハッシュ・ソースと配布版を照合する。
+def verify_extracted(seller, version):
+    with tempfile.TemporaryDirectory(prefix="postclip-verify-") as directory:
+        stage = Path(directory)
+        with ZipFile(seller) as archive:
+            archive.extractall(stage)
+        kit = stage / "PostClip-seller-kit"
+        manifest = {}
+        for line in (kit / "SHA256.txt").read_text(encoding="utf-8").splitlines():
+            digest, name = line.split("  ", 1)
+            if name in manifest or sha256(kit / name) != digest:
+                raise RuntimeError(f"展開後のハッシュが一致しません: {name}")
+            manifest[name] = digest
+        actual = {path.relative_to(kit).as_posix() for path in kit.rglob("*") if path.is_file()}
+        if actual != set(manifest) | {"SHA256.txt"}:
+            raise RuntimeError("SHA256.txtの対象一覧が完成ファイルと一致しません。")
+        for kind, archive_path, folder in [
+            ("source", kit / f"ソース/postclip-source-v{version}.zip", "postclip"),
+            ("windows", kit / f"配布用/postclip-win-x64-v{version}.zip", "PostClip"),
+        ]:
+            with ZipFile(archive_path) as archive:
+                names = archive.namelist()
+                if len(names) != len(set(names)) or any(
+                    PurePosixPath(name).parts[0] != folder or ".." in PurePosixPath(name).parts
+                    or PurePosixPath(name).is_absolute() for name in names
+                ):
+                    raise RuntimeError(f"{kind}のZIP内部パスが不正です。")
+                archive.extractall(stage / kind)
+        source = stage / "source/postclip"
+        runtime = stage / "windows/PostClip"
+        if (source / "LICENSE").read_bytes() != (runtime / "LICENSE-PostClip.txt").read_bytes():
+            raise RuntimeError("ソースと配布版の自作ライセンスが一致しません。")
+        for asset in (kit / "掲載素材").iterdir():
+            if asset.read_bytes() != (source / "booth" / asset.name).read_bytes():
+                raise RuntimeError(f"掲載素材とソース内の素材が一致しません: {asset.name}")
+        check_build(runtime, version, source)
+        subprocess.run(["node", "--test", *map(str, sorted((source / "tests").glob("*.test.cjs")))], cwd=source, check=True)
+        for file in sorted((source / "app").rglob("*")):
+            if file.suffix in {".cjs", ".js"}:
+                subprocess.run(["node", "--check", str(file)], cwd=source, check=True)
+        print("Extracted seller-kit, source and Windows files verified; extracted source tests passed")
+
+
 # 配布用・ソースZIPに用途と実バージョンを付け、掲載素材と一式にまとめる。
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -103,6 +146,7 @@ def main():
     if not re.fullmatch(r"\d+\.\d+\.\d+", version):
         raise RuntimeError("製品バージョンをmajor.minor.patch形式で指定してください。")
     runtime = ROOT / "dist/PostClip-win32-x64"
+    subprocess.run(["node", "scripts/sync-version.cjs"], cwd=ROOT, check=True)
     check_build(runtime, version)
     if not (runtime / "LICENSE").is_file() or not (runtime / "LICENSES.chromium.html").is_file():
         raise RuntimeError("Electron / Chromiumのライセンス表記がありません。")
@@ -207,6 +251,7 @@ postclip-screen.pngは、架空投稿を読み込んだ実際のアプリ画面�
         write_zip(seller, {"PostClip-seller-kit/" + name: path for name, path in contents.items()},
                   allowed_versioned={"PostClip-seller-kit/配布用/" + windows.name,
                                      "PostClip-seller-kit/ソース/" + source.name})
+        verify_extracted(seller, version)
         print(f"Deliver only: {seller}")
 
 

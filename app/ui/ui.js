@@ -5,15 +5,17 @@ const api = window.postclip;
 let busy = false, result = null;
 
 // 入力中の設定をまとめる。
-function options() { return { width: Number($('width').value), scale: Number($('scale').value), conversation: $('conversation').value, mode: $('mode').value, theme: $('theme').value, padding: Number($('padding').value) }; }
+function options() { return { width: Number($('width').value), scale: Number($('scale').value), conversation: $('conversation').value, mode: $('mode').value, theme: $('theme').value, padding: Number($('padding').value), includeNotes: $('includeNotes').checked }; }
 
 // 表示幅と解像度の違いを保存ピクセル数で示す。
 function refreshControls() {
   const o = options();
   $('output-width').textContent = `横 ${((o.width + o.padding * 2) * o.scale).toLocaleString()}px`;
   document.querySelectorAll('[data-width]').forEach(button => button.classList.toggle('selected', Number(button.dataset.width) === o.width));
-  $('theme').disabled = o.mode === 'page';
-  $('mode-note').textContent = o.mode === 'page' ? '必要に応じて下の「Xを開く」でログイン。色はX側の設定を使います。' : '公開投稿向け。ログイン不要で利用できます。';
+  $('theme').disabled = o.mode === 'page' || o.includeNotes;
+  $('mode').disabled = o.includeNotes;
+  $('mode-note').textContent = o.includeNotes ? 'ノートを含めるため、投稿画面から撮影します。色はX側の設定を使います。' : o.mode === 'page' ? '必要に応じて下の「Xを開く」でログイン。色はX側の設定を使います。' : '公開投稿向け。コミュニティノートは省略される場合があります。';
+  $('notes-note').textContent = o.includeNotes ? '表示されたノートも保存。ノートがない投稿もそのまま作成できます。' : 'ノートを含める場合はオンに。Xの投稿画面から撮影します。';
   $('conversation-note').textContent = o.conversation === 'thread' ? '公開投稿の親を最大20件まで。先頭からこの投稿まで順に保存します。' : o.conversation === 'parent' ? '表示できる直前の返信先を含めます。' : '指定した投稿だけを保存します。';
   if (result && !busy) $('preview-heading').textContent = '設定変更後は「画像を作成」で更新';
 }
@@ -36,7 +38,7 @@ function setBusy(value) {
   $('download').disabled = value || !result;
   $('copy').disabled = value || !result;
   for (const element of $('capture-form').querySelectorAll('input,select,textarea,button')) if (element.id !== 'cancel') element.disabled = value;
-  if (!value) $('theme').disabled = $('mode').value === 'page';
+  if (!value) { $('theme').disabled = $('mode').value === 'page' || $('includeNotes').checked; $('mode').disabled = $('includeNotes').checked; }
 }
 
 // 撮影結果を受け取り、保存前に全体を確認できるようにする。
@@ -61,10 +63,11 @@ async function capture(event) {
     $('result').hidden = false; $('empty-state').hidden = true;
     $('source').hidden = false; $('zoom-control').hidden = false;
     $('actual-size').checked = false; $('result').classList.remove('actual');
-    $('preview-heading').textContent = response.postCount ? `${response.postCount}件の投稿をまとめました` : '完成しました';
+    $('preview-heading').textContent = response.notesIncluded ? 'コミュニティノートを含めて作成しました' : response.postCount ? `${response.postCount}件の投稿をまとめました` : '完成しました';
     $('image-meta').textContent = `${response.width.toLocaleString()} × ${response.height.toLocaleString()} px · PNG · ${(response.bytes / 1024 / 1024).toFixed(2)} MB`;
     $('stage').scrollTop = 0;
-    status(response.warnings.length ? response.warnings.join('\n') : '下端まで確認して、PNGを保存してください。', response.warnings.length ? 'warning' : '');
+    const completeMessage = response.notesStatus === 'not-shown' ? '撮影時の投稿画面にノートの表示はありませんでした。下端まで確認して、PNGを保存してください。' : '下端まで確認して、PNGを保存してください。';
+    status(response.warnings.length ? response.warnings.join('\n') : completeMessage, response.warnings.length ? 'warning' : '');
   } catch { status('処理に失敗しました。アプリを再起動して再試行してください。', 'error'); }
   finally { setBusy(false); }
 }
@@ -80,7 +83,10 @@ async function init() {
   if (!api) { status('PostClipアプリから起動してください。HTMLファイル単体では動作しません。', 'error'); $('capture-button').disabled = true; return; }
   const settings = await api.settings();
   $('version').textContent = settings.version; $('help-version').textContent = settings.version;
-  for (const [key, value] of Object.entries(settings.options)) if ($(key)) $(key).value = String(value);
+  for (const [key, value] of Object.entries(settings.options)) if ($(key)) {
+    if ($(key).type === 'checkbox') $(key).checked = value === true;
+    else $(key).value = String(value);
+  }
   refreshControls();
   $('capture-form').addEventListener('submit', capture);
   $('capture-form').addEventListener('input', refreshControls);

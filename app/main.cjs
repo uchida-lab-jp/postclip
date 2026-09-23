@@ -5,7 +5,7 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const crypto = require('node:crypto');
-const { DEFAULTS, parsePostUrl, validateOptions, makeFilename, isXNavigation } = require('./core.cjs');
+const { DEFAULTS, SETTINGS_VERSION, parsePostUrl, validateOptions, restoreOptions, makeFilename, isXNavigation } = require('./core.cjs');
 const { capturePost, deadline } = require('./capture.cjs');
 const { restrictNetwork } = require('./network.cjs');
 
@@ -30,12 +30,17 @@ async function atomicWrite(file, data) {
 
 // 設定だけを保存し、投稿URLや画像の履歴はディスクに保存しない。
 async function saveSettings(options) {
-  await atomicWrite(path.join(app.getPath('userData'), 'settings.json'), JSON.stringify(options, null, 2));
+  await atomicWrite(path.join(app.getPath('userData'), 'settings.json'), JSON.stringify({ ...options, settingsVersion: SETTINGS_VERSION }, null, 2));
 }
 
-// 古い・破損した設定ファイルは安全な初期値に戻す。
+// 旧設定のノート既定値を一度だけ更新し、破損した設定は安全な初期値に戻す。
 async function readSettings() {
-  try { return validateOptions(JSON.parse(await fs.readFile(path.join(app.getPath('userData'), 'settings.json'), 'utf8'))); }
+  try {
+    const stored = JSON.parse(await fs.readFile(path.join(app.getPath('userData'), 'settings.json'), 'utf8'));
+    const options = restoreOptions(stored);
+    if (stored.settingsVersion !== SETTINGS_VERSION) await saveSettings(options).catch(() => {});
+    return options;
+  }
   catch { return { ...DEFAULTS }; }
 }
 
@@ -85,7 +90,7 @@ function installHandlers() {
       latest = { ...result, post, options, filename: makeFilename(post, options) };
       await saveSettings(options).catch(() => { result.warnings.push('設定を保存できませんでした。画像は保存できます。'); });
       return { ok: true, dataUrl: `data:image/png;base64,${result.png.toString('base64')}`, width: result.width, height: result.height,
-        bytes: result.png.length, warnings: result.warnings, postCount: result.postCount, filename: latest.filename, source: post.url, options };
+        bytes: result.png.length, warnings: result.warnings, postCount: result.postCount, notesIncluded: result.notesIncluded, notesStatus: result.notesStatus, filename: latest.filename, source: post.url, options };
     } catch (error) {
       return { ok: false, cancelled: Boolean(job?.cancelled), error: job?.cancelled ? 'キャンセルしました。' : friendlyError(error) };
     } finally {
