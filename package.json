@@ -1,6 +1,6 @@
 {
   "name": "postclip",
-  "version": "1.1.2",
+  "version": "1.1.13",
   "description": "Xの投稿をスマホ幅・高解像度PNGで保存するPCアプリ",
   "main": "app/main.cjs",
   "scripts": {
@@ -13,7 +13,20 @@
     "test:notes": "electron tests/notes-smoke.cjs",
     "sync:version": "node scripts/sync-version.cjs",
     "prebuild:win": "npm run sync:version",
-    "test:parent-layout": "electron tests/parent-layout-smoke.cjs"
+    "test:parent-layout": "electron tests/parent-layout-smoke.cjs",
+    "test:access": "electron tests/access-smoke.cjs",
+    "test:open-page-flow": "electron tests/open-page-flow-smoke.cjs",
+    "test:edited-post": "electron tests/edited-post-smoke.cjs",
+    "test:full-content": "electron tests/full-content-smoke.cjs",
+    "test:legacy-full-thread": "electron tests/legacy-full-thread-smoke.cjs",
+    "test:legacy-thread-ui": "electron tests/legacy-thread-ui-smoke.cjs",
+    "test:missing-grok-link": "electron tests/missing-grok-link-smoke.cjs",
+    "test:missing-grok-link-ui": "electron tests/missing-grok-link-ui-smoke.cjs",
+    "test:grok-expand-ui": "electron tests/grok-expand-ui-smoke.cjs",
+    "test:reflow-quote": "electron tests/reflow-quote-smoke.cjs",
+    "test:quote-navigation": "electron tests/quote-navigation-smoke.cjs",
+    "test:viewport": "electron tests/viewport-smoke.cjs",
+    "test:grok-conversation": "electron tests/grok-conversation-smoke.cjs"
   },
   "keywords": [],
   "author": "",

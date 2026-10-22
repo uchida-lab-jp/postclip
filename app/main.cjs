@@ -6,11 +6,13 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const crypto = require('node:crypto');
 const { DEFAULTS, SETTINGS_VERSION, parsePostUrl, validateOptions, restoreOptions, makeFilename, isXNavigation } = require('./core.cjs');
-const { capturePost, deadline } = require('./capture.cjs');
+const { capturePost, snapshotOpenPage, expandOpenGrok, deadline, expression, cleanupContent } = require('./capture.cjs');
+const pageScripts = require('./page-scripts.cjs');
+const contentScripts = require('./content-scripts.cjs');
 const { restrictNetwork } = require('./network.cjs');
 
 app.setName('PostClip');
-let mainWindow, loginWindow, currentJob, latest;
+let mainWindow, loginWindow, currentJob, openGrokJob, latest;
 const uiPath = path.join(__dirname, 'ui', 'index.html');
 const uiUrl = pathToFileURL(uiPath).href;
 
@@ -52,23 +54,86 @@ function progress(message, percent) {
 // 現在の撮影処理をキャンセルし、専用ブラウザーを閉じる。
 function cancelCapture() {
   if (!currentJob) return;
+  cancelOpenGrok();
   currentJob.cancelled = true;
+  currentJob.stop?.();
   currentJob.abort?.();
+  cleanupContent(currentJob);
   if (currentJob.window && !currentJob.window.isDestroyed()) currentJob.window.destroy();
+}
+
+// 投稿の切替や画面終了時に、手動のGrok全文取得も止める。
+function cancelOpenGrok() {
+  if (!openGrokJob) return;
+  openGrokJob.cancelled = true;
+  cleanupContent(openGrokJob);
 }
 
 // X専用ウィンドウで利用者が通常のログインを行えるようにする。
 async function openX(value) {
   let url = 'https://x.com/';
   if (value?.trim()) { try { url = parsePostUrl(value).url; } catch {} }
-  if (loginWindow && !loginWindow.isDestroyed()) { loginWindow.show(); loginWindow.focus(); await loginWindow.loadURL(url); return; }
+  if (loginWindow && !loginWindow.isDestroyed()) { loginWindow.show(); loginWindow.focus(); if (loginWindow.webContents.getURL() !== url && !openPostMatchesUrl(url)) await deadline(loginWindow.loadURL(url), 45000, 'Xの表示に時間がかかっています。開いた画面をご確認ください。'); return; }
   loginWindow = new BrowserWindow({ width: 1000, height: 840, title: 'PostClip — X', autoHideMenuBar: true, icon: path.join(__dirname, 'assets', 'icon.png'),
-    webPreferences: { partition: 'persist:postclip-x', sandbox: true, contextIsolation: true, nodeIntegration: false } });
+    webPreferences: { partition: 'persist:postclip-x', preload: path.join(__dirname, 'grok-preload.cjs'), sandbox: true, contextIsolation: true, nodeIntegration: false, backgroundThrottling: false } });
   loginWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-  loginWindow.webContents.on('will-navigate', (event, target) => { if (!isXNavigation(target)) event.preventDefault(); });
+  loginWindow.webContents.on('will-navigate', (event, target) => { if (!isXNavigation(target)) event.preventDefault(); else cancelOpenGrok(); });
   loginWindow.webContents.on('will-redirect', (event, target) => { if (!isXNavigation(target)) event.preventDefault(); });
-  loginWindow.on('closed', () => { loginWindow = null; });
+  loginWindow.webContents.on('did-start-navigation', (_event, _url, _inPlace, isMainFrame) => { if (isMainFrame) cancelOpenGrok(); });
+  loginWindow.on('closed', () => { cancelOpenGrok(); loginWindow = null; });
   await deadline(loginWindow.loadURL(url), 45000, 'Xへの接続に時間がかかっています。ウィンドウで表示状態をご確認ください。');
+}
+
+// X確認ウィンドウと入力URLの投稿IDを照合し、別URL形式でも同じ投稿なら表示状態を保つ。
+function openPostMatchesUrl(url) {
+  if (!loginWindow || loginWindow.isDestroyed()) return false;
+  try { return parsePostUrl(loginWindow.webContents.getURL()).id === parsePostUrl(url).id; }
+  catch { return false; }
+}
+
+// 必要な場合だけX画面を表示し、ログインや表示確認の完了後に自動で作成を続ける。
+async function waitForOpenPost(post, job, report) {
+  report('Xの画面で投稿本文を表示してください。表示後、自動で画像を作成します。', 10);
+  job.returnToMain = true;
+  await openX(post.url);
+  const end = Date.now() + 120000;
+  while (Date.now() < end) {
+    if (job.cancelled) throw new Error('キャンセルしました。');
+    if (!loginWindow || loginWindow.isDestroyed()) throw new Error('X画面を閉じたため作成を中止しました。もう一度「画像を作成」を押してください。');
+    if (openPostMatchesUrl(post.url)) {
+      let state;
+      try { state = await deadline(loginWindow.webContents.executeJavaScript(expression(pageScripts.inspectPost, post.id)), 4000, 'X画面の応答を待っています。'); }
+      catch { if (job.cancelled) throw new Error('キャンセルしました。'); }
+      if (state?.found) return;
+      if (state?.reason === 'unavailable') throw new Error('Xでこの投稿を表示できません。投稿の削除や公開範囲をご確認ください。');
+    }
+    await new Promise(resolve => setTimeout(resolve, 400));
+  }
+  throw new Error('X画面で本文の表示を確認できませんでした。ログインや投稿URLを確認して「画像を作成」を押してください。');
+}
+
+// 通常作成と表示確認後の再試行を同じ経路にまとめ、余分な作成ボタンを不要にする。
+async function runCapture(post, options, input, job, report) {
+  job.report = report;
+  if (openGrokJob?.promise) {
+    report('X画面で開始したGrok全文取得を待っています…', 10);
+    await openGrokJob.promise.catch(() => {});
+  }
+  if (input?.interactive === true) await waitForOpenPost(post, job, report);
+  const render = async () => {
+    if (job.cancelled) throw new Error('キャンセルしました。');
+    if (input?.useOpenPage === true || openPostMatchesUrl(post.url)) {
+      report('表示済みの投稿を取り込んでいます…', 16);
+      job.openPageSnapshot = await deadline(snapshotOpenPage(loginWindow?.webContents, post, options, job), 180000, '表示済みの投稿の全文を取り込めませんでした。「Xを開いて再試行」で表示を確認してください。');
+    }
+    return capturePost(post, options, job, report);
+  };
+  try { return await render(); }
+  catch (error) {
+    if (job.cancelled || input?.interactive === true || !['login', 'sensitive', 'app-only'].includes(error.code)) throw error;
+    await waitForOpenPost(post, job, report);
+    return render();
+  }
 }
 
 // IPCは操作ごとの専用入口だけを公開する。
@@ -85,17 +150,24 @@ function installHandlers() {
       job = { cancelled: false, window: null };
       currentJob = job;
       latest = null;
-      const result = await deadline(capturePost(post, options, job, progress), options.conversation === 'thread' ? 360000 : 110000, '処理が制限時間を超えました。ネット接続を確認して再試行してください。');
+      const cancelled = new Promise((_, reject) => { job.stop = () => reject(new Error('キャンセルしました。')); });
+      const report = (message, percent) => { if (!job.cancelled && currentJob === job) progress(message, percent); };
+      const result = await deadline(Promise.race([runCapture(post, options, input, job, report), cancelled]), options.conversation === 'thread' ? 360000 : 240000, '処理が制限時間を超えました。ネット接続を確認して再試行してください。');
       if (job.cancelled) throw new Error('キャンセルしました。');
       latest = { ...result, post, options, filename: makeFilename(post, options) };
       await saveSettings(options).catch(() => { result.warnings.push('設定を保存できませんでした。画像は保存できます。'); });
       return { ok: true, dataUrl: `data:image/png;base64,${result.png.toString('base64')}`, width: result.width, height: result.height,
-        bytes: result.png.length, warnings: result.warnings, postCount: result.postCount, notesIncluded: result.notesIncluded, notesStatus: result.notesStatus, filename: latest.filename, source: post.url, options };
+        bytes: result.png.length, warnings: result.warnings, postCount: result.postCount, notesIncluded: result.notesIncluded, notesStatus: result.notesStatus, usedOpenPage: Boolean(job.openPageSnapshot), filename: latest.filename, source: post.url, options };
     } catch (error) {
-      return { ok: false, cancelled: Boolean(job?.cancelled), error: job?.cancelled ? 'キャンセルしました。' : friendlyError(error) };
+      return { ok: false, recovery: !job?.cancelled && (Boolean(error.recovery) || Boolean(job)), cancelled: Boolean(job?.cancelled), error: job?.cancelled ? 'キャンセルしました。' : friendlyError(error) };
     } finally {
+      // 期限切れの表示確認が裏で続かないよう、元のX画面を閉じず待機処理を止める。
+      if (job) job.cancelled = true;
+      if (job) job.stop = null;
+      cleanupContent(job);
       if (job?.window && !job.window.isDestroyed()) job.window.destroy();
       if (currentJob === job) currentJob = null;
+      if (job?.returnToMain && mainWindow && !mainWindow.isDestroyed()) { mainWindow.show(); mainWindow.focus(); }
     }
   });
   ipcMain.handle('cancel', event => { trusted(event); cancelCapture(); return true; });
@@ -118,6 +190,26 @@ function installHandlers() {
     catch { return { ok: false, error: 'コピーできませんでした。PNG保存をご利用ください。' }; }
   });
   ipcMain.handle('open-x', async (event, value) => { trusted(event); try { await openX(typeof value === 'string' ? value : ''); return { ok: true }; } catch (e) { return { ok: false, error: friendlyError(e) }; } });
+  ipcMain.handle('expand-open-grok', async (event, key) => {
+    if (!loginWindow || loginWindow.isDestroyed() || event.sender !== loginWindow.webContents || event.senderFrame !== loginWindow.webContents.mainFrame || event.senderFrame.url !== loginWindow.webContents.getURL()) throw new Error('この画面からGrokの全文は取得できません。');
+    if (typeof key !== 'string' || !/^grok-[a-z0-9-]{1,80}$/.test(key)) throw new Error('Grokカードの展開操作を確認できませんでした。');
+    if (currentJob) return { ok: true, pending: true };
+    if (openGrokJob?.promise) return openGrokJob.promise;
+    const job = { cancelled: false };
+    openGrokJob = job;
+    job.promise = (async () => {
+      try {
+        parsePostUrl(event.senderFrame.url);
+        const clickedUrl = await event.sender.executeJavaScript(expression(contentScripts.readGrokRequest, key));
+        if (!clickedUrl) throw new Error('押されたGrokカードの投稿を確認できませんでした。');
+        const post = parsePostUrl(clickedUrl);
+        await deadline(expandOpenGrok(event.sender, post, job), 180000, 'Grokの全文取得が制限時間を超えました。もう一度「さらに表示」を押してください。');
+        return { ok: true };
+      } catch (error) { return { ok: false, error: friendlyError(error) }; }
+      finally { job.cancelled = true; cleanupContent(job); if (openGrokJob === job) openGrokJob = null; }
+    })();
+    return job.promise;
+  });
   ipcMain.handle('open-source', async event => { trusted(event); if (latest) await shell.openExternal(latest.post.url); return true; });
   ipcMain.handle('clear-x-data', async event => {
     trusted(event);
@@ -168,5 +260,5 @@ else {
     await createMainWindow();
   }).catch(error => { dialog.showErrorBox('PostClipを起動できませんでした', friendlyError(error)); app.quit(); });
   app.on('window-all-closed', () => app.quit());
-  app.on('before-quit', cancelCapture);
+  app.on('before-quit', () => { cancelCapture(); cancelOpenGrok(); });
 }

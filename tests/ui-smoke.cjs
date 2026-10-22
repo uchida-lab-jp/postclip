@@ -29,12 +29,15 @@ async function fixtures() {
     if(new URL(request.url).pathname==='/widgets.js')return new Response(`window.twttr={widgets:{createTweet:async(id,mount,opts)=>{const f=document.createElement('iframe');f.style.cssText='width:'+opts.width+'px;height:620px';f.src='https://platform.twitter.com/sample';mount.append(f);await new Promise(r=>f.onload=r);return f}}};`,{headers:{'content-type':'application/javascript'}});
     return new Response(sample,{headers:{'content-type':'text/html;charset=utf-8'}});
   });
+  let gated = false;
+  const gate = '<!doctype html><meta charset="utf-8"><h2>センシティブな内容</h2><p>このポストはXアプリでのみ表示できます</p><a href="/i/jf/onboarding/web?mode=login">ログイン</a>';
   const withNote = sample.replace('</article>', '<div data-testid="birdwatch-pivot"><div>Readers added context</div><p>テスト用のコミュニティノート本文です。背景情報も保存します。</p></div></article>');
   await session.fromPartition('persist:postclip-x').protocol.handle('https', request => {
     const url = new URL(request.url);
     if (url.pathname === '/widgets.js') return new Response(`window.twttr={widgets:{createTweet:async(id,mount,opts)=>{const f=document.createElement('iframe');f.style.cssText='width:'+opts.width+'px;height:620px';f.src='https://platform.twitter.com/sample';mount.append(f);await new Promise(r=>f.onload=r);return f}}};`,{headers:{'content-type':'application/javascript'}});
-    return new Response(url.hostname === 'x.com' ? withNote : sample, {headers:{'content-type':'text/html;charset=utf-8'}});
+    return new Response(url.hostname === 'x.com' ? (gated ? gate : withNote) : sample, {headers:{'content-type':'text/html;charset=utf-8'}});
   });
+  return value => { gated = value; };
 }
 
 // アプリの実際のIPCを通して、作成・保存・コピー・設定再読込を検証する。
@@ -49,7 +52,7 @@ async function run() {
   assert.deepEqual(isolation,{node:'undefined',process:'undefined'});
   const invalid=await wc.executeJavaScript('window.postclip.capture({url:"https://example.com/",options:{}})');
   assert.equal(invalid.ok,false);
-  await fixtures();
+  const setGate = await fixtures();
   assert.equal(await wc.executeJavaScript('document.getElementById("conversation").value'),'none');
   assert.equal(await wc.executeJavaScript('document.getElementById("includeNotes").checked'),true);
   await wc.executeJavaScript('document.getElementById("includeNotes").click()');
@@ -84,7 +87,7 @@ async function run() {
   await wc.reload();
   await wait(()=>wc.executeJavaScript('document.getElementById("conversation").value === "thread"'),'親までの設定が復元されない');
   assert.equal(await wc.executeJavaScript('document.getElementById("includeNotes").checked'),false);
-  assert.equal(JSON.parse(await fs.readFile(path.join(app.getPath('userData'),'settings.json'),'utf8')).settingsVersion,2);
+  assert.equal(JSON.parse(await fs.readFile(path.join(app.getPath('userData'),'settings.json'),'utf8')).settingsVersion,3);
   await wc.executeJavaScript('document.getElementById("includeNotes").click();document.getElementById("url").value="https://x.com/postclip_sample/status/200";document.getElementById("capture-button").click()');
   await wait(()=>wc.executeJavaScript('!document.getElementById("download").disabled'),'ノート付き画像作成が完了しない');
   assert.equal(await wc.executeJavaScript('document.getElementById("preview-heading").textContent'),'コミュニティノートを含めて作成しました');
@@ -99,7 +102,38 @@ async function run() {
   const overflow=await wc.executeJavaScript('document.documentElement.scrollWidth>innerWidth');
   assert.equal(overflow,false);
   await fs.writeFile(path.join(out,'ui-small.png'),(await wc.capturePage()).toPNG());
-  console.log('UI_PASS: actual capture IPC, PNG save bytes, notes/thread option and persistence, save cancel, clipboard, isolation, help, small layout');
+  // 本文の表示を待って自動再開し、利用者に別の作成ボタンを押させない。
+  setGate(true);
+  await wc.executeJavaScript('document.getElementById("conversation").value="none";document.getElementById("url").value="https://x.com/postclip_sample/status/200";document.getElementById("capture-button").click()');
+  let xWindow;
+  await wait(() => { xWindow=BrowserWindow.getAllWindows().find(w=>w!==main && w.isVisible() && w.webContents.getURL().includes('/postclip_sample/status/200'));return !!xWindow; }, '必要なX確認ウィンドウが自動で開かない');
+  assert.equal(await wc.executeJavaScript('document.body.classList.contains("busy")'), true);
+  await wait(()=>wc.executeJavaScript('document.getElementById("busy-message").textContent.includes("自動")'), "自動再開の案内が出ない");
+  assert.equal(await wc.executeJavaScript('document.getElementById("capture-open-x")'), null);
+  setGate(false);
+  await xWindow.webContents.reload();
+  await wait(()=>xWindow.webContents.executeJavaScript('!!document.querySelector("article")'), '本文が表示されない');
+  setGate(true);
+  await wait(()=>wc.executeJavaScript('!document.getElementById("download").disabled'), '表示確認後に自動で作成が続かない');
+  assert.equal(await wc.executeJavaScript('document.getElementById("preview-heading").textContent'), 'コミュニティノートを含めて作成しました');
+  assert.equal((await wc.executeJavaScript('window.postclip.save()')).ok,true);
+  assert.equal((await fs.readFile(file)).toString('base64'),(await wc.executeJavaScript('document.getElementById("result-image").src')).split(',')[1]);
+  await fs.writeFile(path.join(out,'ui-auto-resume-v115.png'),(await wc.capturePage()).toPNG());
+  // X画面の表示待ちも直ちにキャンセルでき、後から成功結果が届かない。
+  await xWindow.webContents.reload();
+  await wc.executeJavaScript('document.getElementById("capture-button").click()');
+  await wait(()=>wc.executeJavaScript('document.getElementById("busy-message").textContent.includes("自動")'), '表示確認の待機に入らない');
+  const cancelStart=Date.now();
+  await wc.executeJavaScript('document.getElementById("cancel").click()');
+  await wait(()=>wc.executeJavaScript('!document.body.classList.contains("busy")'), '表示待ちをキャンセルできない',2000);
+  assert.ok(Date.now()-cancelStart<2000);
+  assert.equal(await wc.executeJavaScript('document.getElementById("download").disabled'),true);
+  assert.equal(xWindow.isDestroyed(),false);
+  console.log('UI_PASS: actual capture IPC, PNG save bytes, notes/thread option and persistence, save cancel, clipboard, isolation, help, small layout, automatic X display recovery, no second capture button, immediate wait cancellation');
 }
 require('../app/main.cjs');
-app.whenReady().then(run).then(()=>app.quit()).catch(error=>{console.error(error.stack);app.exit(1);});
+app.whenReady().then(run).then(()=>app.quit()).catch(async error=>{
+  console.error(error.stack);
+  if(main&&!main.isDestroyed())console.error(await main.webContents.executeJavaScript('({status:document.getElementById("status").textContent,progress:document.getElementById("busy-message").textContent,busy:document.body.classList.contains("busy")})'));
+  app.exit(1);
+});

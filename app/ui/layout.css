@@ -6,3 +6,15 @@ html,body{height:100%;overflow:hidden}
 .preview-stage{min-height:0;max-height:none}
 .preview-toolbar,.preview-footer,.status,.progress-track{flex-shrink:0}
 @media(max-height:800px){.preview-panel{min-height:0}.empty-state{min-height:520px}}
+
+/* 基本操作を一画面へ集約し、詳細設定を開いても作成ボタンを見失わないようにする。 */
+.intro h1{font-size:27px;margin:10px 0}.intro p{font-size:11px;margin-bottom:20px}
+.controls{padding-top:23px}.section-label{margin:20px 0 8px}
+#advanced{margin-top:18px}#advanced .label-row.gap{margin-top:16px}
+#advanced #mode{margin-top:0}#advanced label[for=mode]{margin-top:18px}
+.capture-dock{position:sticky;bottom:-20px;background:#fff;padding:1px 0 2px;z-index:3}
+.capture-dock .capture-button{margin-top:16px}.capture-dock .shortcut{margin-bottom:12px}
+.busy-overlay strong{text-align:center;max-width:85%;line-height:1.9}
+.status.error{font-size:12px}.recovery-actions{flex-shrink:0}
+
+@media(max-height:800px){.controls{padding-top:18px}.intro .eyebrow{display:none}.intro h1{font-size:24px;margin:0 0 5px}.intro p{font-size:10px;margin-bottom:14px}.url-field textarea{min-height:76px}.section-label{display:none}.notes-toggle{margin-top:13px}.field-note{line-height:1.6}#advanced{margin-top:12px;padding:10px 0}.capture-dock .capture-button{margin-top:12px}.capture-dock .shortcut{margin:8px 0}.control-footer{display:none}}

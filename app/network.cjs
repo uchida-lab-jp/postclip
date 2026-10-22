@@ -8,6 +8,8 @@ function allowedRequest(value) {
     if (u.protocol === 'postclip:') return u.hostname === 'capture' && ['/embed.html', '/embed.js', '/embed.css'].includes(u.pathname);
     if (['file:', 'data:', 'blob:', 'about:'].includes(u.protocol)) return true;
     if (u.protocol !== 'https:') return false;
+    // 添付のGrok共有先を調べる短縮URLだけを許可し、転送先は呼出側で再検証する。
+    if (u.hostname === 't.co') return !u.username && !u.password && !u.port && /^\/[A-Za-z0-9]+$/.test(u.pathname);
     return ['x.com', 'twitter.com', 'twimg.com'].some(domain => u.hostname === domain || u.hostname.endsWith(`.${domain}`));
   } catch { return false; }
 }

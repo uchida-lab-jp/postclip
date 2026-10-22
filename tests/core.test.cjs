@@ -18,7 +18,7 @@ test('任意URL・偽装ドメイン・認証情報・不正投稿IDを拒否す
 });
 test('設定範囲と不正な型を拒否する', () => {
   for (const o of [{width:319}, {width:551}, {width:400.1}, {width:'NaN'}, {scale:4}, {padding:23}, {mode:'file'}, {theme:'evil'}, {conversation:'unknown'}, {conversation:1}, {includeNotes:'false'}, {includeNotes:1}, []]) assert.throws(() => validateOptions(o));
-  assert.deepEqual(validateOptions({}), {width:400,scale:3,padding:0,mode:'embed',theme:'light',conversation:'parent',includeNotes:true});
+  assert.deepEqual(validateOptions({}), {width:400,scale:3,padding:0,mode:'auto',theme:'light',conversation:'parent',includeNotes:true});
   assert.equal(validateOptions({includeNotes:true}).includeNotes,true);
 });
 
@@ -28,6 +28,10 @@ test('旧版のノート設定を一度だけオンへ移行し、その後の�
   assert.equal(migrated.width,430);assert.equal(migrated.scale,2);assert.equal(migrated.conversation,'none');
   assert.equal(restoreOptions({...migrated,settingsVersion:SETTINGS_VERSION,includeNotes:false}).includeNotes,false);
   assert.equal(validateOptions({includeNotes:false}).includeNotes,false);
+  const v114 = restoreOptions({settingsVersion:2,mode:'page',includeNotes:false,width:430});
+  assert.equal(v114.mode,'auto');
+  assert.equal(v114.includeNotes,false);
+  assert.equal(v114.width,430);
 });
 test('縦長画像の上限超過を検出し、画質を下げれば許容する', () => {
   assert.throws(() => checkDimensions(550,10000,3));
@@ -45,6 +49,8 @@ test('ログイン用ウィンドウの遷移をXのHTTPSだけに限定する',
 test('第三者の診断・解析送信を許可せず、Xの画像配信だけを許可する', () => {
   assert.equal(allowedRequest('postclip://capture/embed.html?id=200'),true);
   assert.equal(allowedRequest('postclip://capture/private.txt'),false);
+  assert.equal(allowedRequest('https://t.co/SharedGrok123'),true);
+  for (const url of ['https://t.co.evil.test/abc', 'https://u:p@t.co/abc', 'https://t.co:8443/abc', 'https://t.co/', 'http://t.co/abc']) assert.equal(allowedRequest(url),false);
   for (const u of ['https://x.com/i/api/graphql/test', 'https://platform.twitter.com/widgets.js', 'https://pbs.twimg.com/media/test', 'file:///local/embed.html']) assert.equal(allowedRequest(u), true);
   for (const u of ['https://o123.ingest.sentry.io/api/1/envelope/', 'https://o123.ingest.us.sentry.io/api/1/envelope/', 'https://x.com.evil.test/', 'https://analytics.example.com/', 'http://x.com/', 'https://127.0.0.1/']) assert.equal(allowedRequest(u), false);
 });

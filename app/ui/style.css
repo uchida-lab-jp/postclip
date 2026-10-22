@@ -2,3 +2,5 @@
 
 /* ノート付き保存を基本設定内で選べるようにする。 */
 .notes-toggle{display:flex;align-items:center;gap:9px;margin-top:16px;font-size:13px;font-weight:600;cursor:pointer}.notes-toggle input{width:16px;height:16px;accent-color:var(--ink,#243d2e);flex-shrink:0}
+
+.recovery-actions{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 14px}.recovery-actions[hidden]{display:none}.recovery-actions .field-note{flex-basis:100%;margin:0}

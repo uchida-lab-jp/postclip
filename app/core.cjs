@@ -1,7 +1,7 @@
 'use strict';
 
-const DEFAULTS = Object.freeze({ width: 400, scale: 3, theme: 'light', conversation: 'parent', mode: 'embed', padding: 0, includeNotes: true });
-const SETTINGS_VERSION = 2;
+const DEFAULTS = Object.freeze({ width: 400, scale: 3, theme: 'light', conversation: 'parent', mode: 'auto', padding: 0, includeNotes: true });
+const SETTINGS_VERSION = 3;
 const MAX_PIXELS = 30_000_000;
 
 // 投稿URLを検証し、追跡用パラメーターを含まない正規URLに揃える。
@@ -32,7 +32,7 @@ function validateOptions(value = {}) {
   if (![0, 16, 24].includes(padding)) throw new Error('余白の設定が正しくありません。');
   const mode = value.mode ?? DEFAULTS.mode;
   const theme = value.theme ?? DEFAULTS.theme;
-  if (!['embed', 'page'].includes(mode) || !['light', 'dark'].includes(theme)) throw new Error('表示方法の設定が正しくありません。');
+  if (!['auto', 'embed', 'page'].includes(mode) || !['light', 'dark'].includes(theme)) throw new Error('表示方法の設定が正しくありません。');
   // 1.0.0のチェックボックス設定も、意味を変えずに引き継ぐ。
   const legacy = value.conversation ?? DEFAULTS.conversation;
   const conversation = legacy === true ? 'parent' : legacy === false ? 'none' : legacy;
@@ -45,7 +45,7 @@ function validateOptions(value = {}) {
 // 旧版の設定を初回だけノートありへ移行し、その後の利用者の選択を保持する。
 function restoreOptions(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('設定を読み取れませんでした。');
-  return validateOptions({ ...value, includeNotes: value.settingsVersion === SETTINGS_VERSION ? value.includeNotes : true });
+  return validateOptions({ ...value, mode: value.settingsVersion === SETTINGS_VERSION ? value.mode : 'auto', includeNotes: value.settingsVersion >= 2 ? value.includeNotes : true });
 }
 
 // 巨大な画像によるメモリー不足を避け、途中切れのまま成功扱いにしない。

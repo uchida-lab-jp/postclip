@@ -2,6 +2,14 @@
 
 // 対象の投稿自身へのリンクで記事を特定し、引用内の別投稿と取り違えない。
 function inspectPost(id) {
+  // 編集済み投稿の時刻は /history を指す。投稿IDとして照合し、外部の偽リンクは除く。
+  const ownPostId = link => {
+    try {
+      const url = new URL(link.href, location.href);
+      if (url.protocol !== 'https:' || !['x.com', 'www.x.com', 'twitter.com', 'www.twitter.com'].includes(url.hostname) || url.username || url.password || url.port) return null;
+      return url.pathname.match(/^\/(?:[A-Za-z0-9_]{1,15}\/status|i\/web\/status|i\/status)\/(\d{1,25})(?:\/history)?\/?$/)?.[1] || null;
+    } catch { return null; }
+  };
   const articles = [...document.querySelectorAll('article')].filter(a => !a.parentElement.closest('article'));
   const match = articles.find(article => {
     // 引用・本文のリンクを外し、新旧X画面の投稿自身のリンクだけを比較する。
@@ -11,27 +19,43 @@ function inspectPost(id) {
     });
     const time = ownLinks.map(a => a.querySelector('time')).find(Boolean);
     const primaryLink = time && time.closest('a');
-    const path = primaryLink ? new URL(primaryLink.href, location.href).pathname : '';
-    if (new RegExp(`/status/${id}/?$`).test(path)) return true;
+    if (primaryLink && ownPostId(primaryLink) === id) return true;
     // 詳細表示ではタイムスタンプのtime要素がない場合もある。
     if (time) return false;
-    return ownLinks.some(a => new RegExp(`/status/${id}/?$`).test(new URL(a.href, location.href).pathname));
+    return ownLinks.some(a => ownPostId(a) === id);
   });
+  // 本文や引用に書かれた「ログイン」等を、X自身の制限表示と誤認しない。
+  const scope = (match || document.body).cloneNode(true);
+  scope.querySelectorAll('script,style,nav,footer,[hidden],[aria-hidden="true"],[data-testid="tweetText"],[dir="auto"].whitespace-pre-wrap,[role="link"]').forEach(el => el.remove());
+  if (!match) scope.querySelectorAll('article').forEach(el => el.remove());
+  const text = (scope.textContent || '').replace(/\s+/g, ' ').trim();
+  const appOnly = /このポストはXアプリでのみ表示できます|This (?:post|content) (?:can only be (?:viewed|seen)|is only (?:available|viewable)) (?:on|in) (?:the )?X app/i.test(text);
+  const sensitive = /センシティブな内容|センシティブなメディア|potentially sensitive content|sensitive (?:content|media)/i.test(text);
+  const unavailable = /このポストは表示できません|このポストは削除|このアカウントは存在しません|This Post is unavailable|This account doesn.t exist|This Post was deleted/i.test(text);
+  const loginLink = [...scope.querySelectorAll('a[href]')].some(a => {
+    try {
+      const u = new URL(a.getAttribute('href'), 'https://x.com');
+      return ['x.com', 'twitter.com', 'www.x.com', 'www.twitter.com'].includes(u.hostname) &&
+        (/^\/(?:login|i\/flow\/login)\/?$/.test(u.pathname) || (u.pathname === '/i/jf/onboarding/web' && u.searchParams.get('mode') === 'login'));
+    } catch { return false; }
+  });
+  const loginRoute = /^\/(?:login|i\/flow\/login)\/?$/.test(location.pathname) ||
+    (location.pathname === '/i/jf/onboarding/web' && new URLSearchParams(location.search).get('mode') === 'login');
+  const login = !match && (loginRoute || (/ログイン|Sign in|Log in/i.test(text) && (loginLink || !!scope.querySelector('input[autocomplete="username"]'))));
+  const reason = appOnly ? 'app-only' : sensitive ? 'sensitive' : unavailable ? 'unavailable' : login ? 'login' : null;
+  if (reason) return { found: false, reason, unavailable, login, pending: !!scope.querySelector('[role=progressbar],[aria-busy=true]') };
   if (match) {
     match.setAttribute('data-postclip-target', id);
     return { found: true, height: match.getBoundingClientRect().height };
   }
-  const text = document.body.innerText;
-  const unavailable = /このポストは表示できません|このポストは削除|このアカウントは存在しません|This Post is unavailable|This account doesn.t exist|This Post was deleted/i.test(text);
-  const loginGate = !articles.length && /ログイン|Sign in|Log in/.test(text) && !!document.querySelector('a[href*="/login"],a[href*="/i/flow/login"],input[autocomplete="username"]');
-  return { found: false, unavailable, login: /\/i\/flow\/login/.test(location.pathname) || loginGate };
+  return { found: false, unavailable: false, login: false };
 }
 
 // 対象記事に属するノート本文を特定し、リンクだけ・引用・返信のノートを区別する。
 function inspectCommunityNote(id) {
   const article = document.querySelector(`[data-postclip-target="${id}"]`);
   if (!article) return { found: false };
-  const cell = article.closest('[data-testid="cellInnerDiv"], [data-timeline-entry]');
+  const cell = article.closest('[data-testid="cellInnerDiv"], [data-timeline-entry], [data-navigation-stop]');
   const scope = cell && [...cell.querySelectorAll('article')].every(a => a === article || article.contains(a)) ? cell : article;
   // Xのノートカードに実在する見出しと、ノート詳細リンクを組み合わせて調べる。
   const heading = /^(?:閲覧したユーザーが(?:他のユーザーにとって役立つと思う)?背景情報を追加しました|読者が背景情報を追加しました|Readers added context(?: they thought people might want to know)?|Readers added a community note)$/i;
@@ -85,17 +109,6 @@ async function revealPost(id, conversation) {
   article.scrollIntoView({ block: 'end' });
 }
 
-// 本文の展開ボタンだけを操作し、引用や返信先の省略は別途通知する。
-function expandPost(id) {
-  const article = document.querySelector(`[data-postclip-target="${id}"]`);
-  if (!article) return false;
-  const text = article.querySelector('[data-testid="tweetText"]');
-  if (!text) return false;
-  const button = article.querySelector('[data-testid="tweet-text-show-more-link"]');
-  if (button && !button.closest('[role="link"]')) { button.click(); return true; }
-  return false;
-}
-
 // 表示済みの記事を同じCSSのまま複製し、ナビゲーションや返信一覧を除いて撮影する。
 function isolatePost(id, options) {
   const article = document.querySelector(`[data-postclip-target="${id}"]`);
@@ -109,10 +122,23 @@ function isolatePost(id, options) {
   root.style.cssText = `position:relative;box-sizing:border-box;width:${options.width + options.padding * 2}px;padding:${options.padding}px;background:${background === 'rgba(0, 0, 0, 0)' ? '#fff' : background};overflow:visible;`;
   const warnings = [];
   for (const source of selected) {
-    const cell = source.closest('[data-testid="cellInnerDiv"], [data-timeline-entry]');
+    const cell = source.closest('[data-testid="cellInnerDiv"], [data-timeline-entry], [data-navigation-stop]');
     // 引用記事は同じ投稿の内容なので、記事数ではなく所属で外枠の保持を判断する。
     const container = cell && [...cell.querySelectorAll('article')].every(a => a === source || source.contains(a)) ? cell : source;
     const clone = container.cloneNode(true);
+    // 元画面で全文が収まった本文だけ、撮影幅で増える行数に合わせて高さを伸ばす。
+    const textSelector = '[data-testid="tweetText"],[dir="auto"].whitespace-pre-wrap,.Tweet-text,[data-postclip-full-resource]';
+    const originalTexts = [...container.querySelectorAll(textSelector)];
+    const copiedTexts = [...clone.querySelectorAll(textSelector)];
+    for (const [textIndex, text] of originalTexts.entries()) {
+      const style = getComputedStyle(text);
+      const visible = !text.closest('[hidden],[aria-hidden="true"]') && style.display !== 'none' && text.getBoundingClientRect().height > 0;
+      const clipped = ((parseInt(style.webkitLineClamp, 10) > 0 || ['hidden', 'clip'].includes(style.overflowY)) && text.scrollHeight > text.clientHeight + 2) || text.scrollWidth > text.clientWidth + 2;
+      if (!visible || clipped) continue;
+      const copied = copiedTexts[textIndex];
+      for (const [name, value] of Object.entries({ height: 'auto', 'max-height': 'none', 'min-width': '0', 'max-width': '100%', width: 'auto', overflow: 'visible', '-webkit-line-clamp': 'unset', 'line-clamp': 'unset', 'text-overflow': 'clip', 'overflow-wrap': 'anywhere' })) copied.style.setProperty(name, value, 'important');
+      if (style.display === '-webkit-box' || style.display === '-webkit-inline-box') copied.style.setProperty('display', 'block', 'important');
+    }
     clone.style.width = `${options.width}px`;
     clone.style.boxSizing = 'border-box';
     clone.style.maxWidth = 'none';
@@ -124,10 +150,8 @@ function isolatePost(id, options) {
     for (const name of computed) if (name.startsWith('--')) clone.style.setProperty(name, computed.getPropertyValue(name));
     clone.querySelectorAll('video').forEach(video => { video.autoplay = false; video.pause(); });
     clone.querySelectorAll('img').forEach(img => { img.loading = 'eager'; });
+    if (!options.includeNotes) clone.querySelectorAll('[data-postclip-note],[data-testid="birdwatch-pivot"],[data-testid="birdwatch-pivot-note"],[data-testid="communityNote"]').forEach(note => note.remove());
     root.append(clone);
-    if (source.querySelector('[data-testid="tweet-text-show-more-link"]') || /(?:さらに表示|もっと見る|Show more)/.test(source.innerText)) {
-      warnings.push('本文・返信先・引用のいずれかに省略表示があります。プレビューで内容を確認してください。');
-    }
   }
   const style = document.createElement('style');
   style.textContent = 'html,body{margin:0!important;padding:0!important;min-width:0!important;overflow:hidden!important;height:auto!important}body>*:not(#postclip-capture){display:none!important}#postclip-capture *{animation:none!important;transition:none!important;caret-color:transparent!important}';
@@ -140,9 +164,13 @@ function isolatePost(id, options) {
 }
 
 // フォントと表示画像の読込完了を待ち、欠落があれば呼出元に伝える。
-async function settleAssets() {
+async function settleAssets(id, conversation) {
   await Promise.race([document.fonts.ready, new Promise(resolve => setTimeout(resolve, 8000))]);
-  const images = [...document.images].filter(img => img.getBoundingClientRect().width > 1);
+  const article = id && document.querySelector(`[data-postclip-target="${id}"]`);
+  const articles = [...document.querySelectorAll('article')].filter(a => !a.parentElement.closest('article'));
+  const index = articles.indexOf(article);
+  const selected = article ? (conversation === 'parent' && index > 0 ? [articles[index - 1], article] : [article]) : [document.querySelector('#postclip-capture') || document.body];
+  const images = selected.flatMap(node => [...node.querySelectorAll('img')]).filter(img => img.getBoundingClientRect().width > 1);
   const missing = await Promise.all(images.map(async img => {
     img.loading = 'eager';
     if (!img.complete) await new Promise(resolve => {
@@ -150,11 +178,15 @@ async function settleAssets() {
       const timer = setTimeout(finish, 10000);
       img.addEventListener('load', finish, { once: true }); img.addEventListener('error', finish, { once: true });
     });
-    if (img.complete && img.naturalWidth) { try { await img.decode(); } catch {} }
+    if (img.complete && img.naturalWidth) {
+      let timer;
+      try { await Promise.race([img.decode(), new Promise(resolve => { timer = setTimeout(resolve, 3000); })]); } catch {}
+      finally { clearTimeout(timer); }
+    }
     return img.naturalWidth === 0;
   }));
   document.querySelectorAll('video').forEach(video => { video.pause(); });
-  return { missing: missing.filter(Boolean).length, more: /(?:さらに表示|もっと見る|Show more|Read more)/.test(document.body.innerText), fonts: document.fonts.status };
+  return { missing: missing.filter(Boolean).length, fonts: document.fonts.status };
 }
 
 // スクロール位置に依存せず、撮影対象全体の境界を返す。
@@ -176,10 +208,29 @@ function snapshotEmbeddedFrame() {
   clone.querySelectorAll('script,iframe,object,embed,base,meta[http-equiv],link[rel="preload"],link[rel="modulepreload"],link[rel="preconnect"],link[rel="dns-prefetch"]').forEach(el => el.remove());
   clone.querySelectorAll('*').forEach(el => {
     for (const attr of [...el.attributes]) if (/^on/i.test(attr.name)) el.removeAttribute(attr.name);
+    // data:文書へ移しても投稿ID・画像・CSSの相対URLが壊れないようにする。
+    for (const name of ['href', 'src', 'poster']) if (el.hasAttribute(name) && !el.getAttribute(name).startsWith('#')) {
+      try { el.setAttribute(name, new URL(el.getAttribute(name), document.baseURI).href); } catch {}
+    }
     if (el.tagName === 'IMG') { el.loading = 'eager'; }
   });
   const capture = clone.querySelector('#postclip-capture');
-  if (capture) clone.querySelector('body').replaceChildren(capture);
+  if (capture) {
+    // スレッド化で外枠を除く前に、認証バッジや操作アイコンの参照先を保持する。
+    const symbols = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    symbols.setAttribute('aria-hidden', 'true');
+    symbols.setAttribute('style', 'position:absolute;width:0;height:0;overflow:hidden');
+    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    const copied = new Set();
+    for (const use of capture.querySelectorAll('use')) {
+      const href = use.getAttribute('href') || use.getAttribute('xlink:href');
+      if (!href?.startsWith('#') || copied.has(href)) continue;
+      const definition = clone.querySelector(`[id="${CSS.escape(href.slice(1))}"]`);
+      if (definition && !capture.contains(definition)) { defs.append(definition.cloneNode(true)); copied.add(href); }
+    }
+    if (defs.childNodes.length) { symbols.append(defs); capture.prepend(symbols); }
+    clone.querySelector('body').replaceChildren(capture);
+  }
   const csp = document.createElement('meta');
   csp.httpEquiv = 'Content-Security-Policy';
   csp.content = "default-src 'none'; script-src 'none'; style-src 'unsafe-inline' https://*.twimg.com https://*.twitter.com https://*.x.com; img-src data: https://*.twimg.com https://*.twitter.com https://*.x.com; font-src data: https://*.twimg.com https://*.twitter.com https://*.x.com; media-src https://*.twimg.com; base-uri 'none'; form-action 'none'";
@@ -251,4 +302,4 @@ function wrapEmbedSnapshot(options) {
   window.scrollTo(0, 0);
 }
 
-module.exports = { inspectPost, inspectCommunityNote, revealPost, expandPost, isolatePost, settleAssets, measureCapture, snapshotEmbeddedFrame, wrapEmbedSnapshot, inspectEmbeddedParent, mountThreadSnapshots };
+module.exports = { inspectPost, inspectCommunityNote, revealPost, isolatePost, settleAssets, measureCapture, snapshotEmbeddedFrame, wrapEmbedSnapshot, inspectEmbeddedParent, mountThreadSnapshots };

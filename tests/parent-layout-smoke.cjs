@@ -9,7 +9,7 @@ app.on('window-all-closed', () => {});
 
 // 引用記事を含む親と、同じ余白を持つ返信の接続線を新旧Xの構造で再現する。
 function fixture(dark, modern) {
-  const cell = modern ? 'data-timeline-entry' : 'data-testid="cellInnerDiv"';
+  const cell = modern === 'navigation' ? 'data-navigation-stop' : modern ? 'data-timeline-entry' : 'data-testid="cellInnerDiv"';
   return `<!doctype html><meta charset="utf-8"><style>
   html,body{margin:0;background:${dark ? '#15202b' : '#fff'};color:${dark ? '#fff' : '#172d24'};font-family:sans-serif}
   .cell{padding:16px;box-sizing:border-box}.parent{padding-bottom:0}.child{padding-top:0}.row{display:flex;gap:8px}.rail{position:relative;width:40px;flex-shrink:0}.avatar{width:40px;height:40px;border-radius:50%;background:#b4ce9b}
@@ -37,7 +37,7 @@ async function capture(values) {
 async function run() {
   let current;
   session.fromPartition('persist:postclip-x').protocol.handle('https', () => new Response(fixture(current.theme === 'dark', current.modern), {headers:{'content-type':'text/html;charset=utf-8'}}));
-  for (current of [{width:430,padding:0,modern:true}, {width:320,padding:16,modern:false}, {width:550,padding:24,theme:'dark',modern:true}]) {
+  for (current of [{width:430,padding:0,modern:true}, {width:320,padding:16,modern:false}, {width:550,padding:24,theme:'dark',modern:true}, {width:430,padding:0,modern:'navigation'}]) {
     const {result,metrics:m}=await capture(current);
     assert.ok(Math.abs(m.lines[0].center-m.lines[1].center)<0.25, `接続線のずれ: ${JSON.stringify(m.lines)}`);
     assert.ok(Math.abs(m.avatars[0].center-m.avatars[1].center)<0.25, '親と返信のアイコン位置');

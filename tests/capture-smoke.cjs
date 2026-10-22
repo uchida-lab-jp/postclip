@@ -34,7 +34,7 @@ async function installFixtures() {
 
 // 実際のPNG寸法を確認し、下端のピクセルまで描画されているか検証する。
 async function captureCase(name, optionValues, check) {
-  const options=validateOptions({includeNotes:false,...optionValues});
+  const options=validateOptions({mode:'embed',includeNotes:false,...optionValues});
   const result=await capturePost(parsePostUrl('https://x.com/postclip_sample/status/200'),options,{cancelled:false,window:null},()=>{});
   await fs.writeFile(path.join(out,`${name}.png`),result.png);
   assert.equal(result.width,(options.width+options.padding*2)*options.scale);
@@ -76,12 +76,14 @@ async function run() {
   assert.ok([...bytes].some((b,i)=>i%4!==3&&b<150),'下端付近に本文または罫線の描画が必要');
   scenario({dark:true});
   await captureCase('embed-dark-padding',{width:430,theme:'dark',padding:24,scale:2});
-  scenario({missing:true,more:true});
-  await captureCase('missing-and-more',{mode:'page'},r=>assert.ok(r.warnings.length>=2));
+  scenario({missing:true});
+  await captureCase('missing-image',{mode:'page'},r=>assert.ok(r.warnings.length>=1));
+  scenario({more:true});
+  await assert.rejects(()=>captureCase('unexpanded-text',{mode:'page'}),/さらに表示|全文/);
   scenario({});
-  await assert.rejects(()=>capturePost(parsePostUrl('x.com/a/status/404'),validateOptions({includeNotes:false}),{cancelled:false},()=>{}),/埋め込み表示できません/);
+  await assert.rejects(()=>capturePost(parsePostUrl('x.com/a/status/404'),validateOptions({mode:'embed',includeNotes:false}),{cancelled:false},()=>{}),/埋め込み表示できません/);
   const job={cancelled:false,window:null};
-  const promise=capturePost(parsePostUrl('x.com/a/status/200'),validateOptions({includeNotes:false}),job,()=>{});
+  const promise=capturePost(parsePostUrl('x.com/a/status/200'),validateOptions({mode:'embed',includeNotes:false}),job,()=>{});
   setTimeout(()=>{job.cancelled=true;if(job.window&&!job.window.isDestroyed())job.window.destroy();},100);
   await assert.rejects(()=>promise);
   process.stdout.write('SMOKE_PASS\n');
